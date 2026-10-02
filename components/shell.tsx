@@ -2,33 +2,67 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Bus, CalendarDays, ChevronDown, Fuel, LayoutDashboard, LogOut, Menu, MoonStar, Route, Settings, Search, ShieldCheck, SunMedium, Users, BarChart3, ArrowRight, Plus, MoreHorizontal, X, MapPinned, CheckCircle2, AlertTriangle, Truck, Wrench, ClipboardList, PencilLine, Trash2, Gauge, Navigation } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Activity, Bell, Bus, CalendarDays, ChevronDown, Fuel, LayoutDashboard, LogOut, Menu, MoonStar, Route, Settings, Search, ShieldCheck, SunMedium, Users, BarChart3, ArrowRight, Plus, MoreHorizontal, X, MapPinned, CheckCircle2, AlertTriangle, Truck, Wrench, ClipboardList, PencilLine, Trash2, Gauge, Navigation } from "lucide-react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useTheme } from "@/components/theme-provider";
-import { sidebarItems } from "@/lib/mock-data";
+import { operationalStaffSidebarItems, sidebarItems } from "@/lib/mock-data";
 import { readPreferences } from "@/lib/preferences";
 
 const navIconMap = {
   LayoutDashboard,
   Route,
   CalendarDays,
+  Activity,
   Bus,
   Users,
   Fuel,
+  Wrench,
   BarChart3,
   Settings,
 };
+
+function subscribeToDemoRole(onChange: () => void) {
+  window.addEventListener("srmss-demo-role-changed", onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener("srmss-demo-role-changed", onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+function getDemoRole() {
+  return window.localStorage.getItem("srmss-demo-role") ?? "depot-supervisor";
+}
+
+function getServerDemoRole() {
+  return "depot-supervisor";
+}
+
+function subscribeToNavigationSearch(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  return () => window.removeEventListener("popstate", onChange);
+}
+
+function getNavigationSearch() {
+  return window.location.search;
+}
+
+function getServerNavigationSearch() {
+  return "";
+}
 
 function IconFromName({ name }: { name: string }) {
   const Component = navIconMap[name as keyof typeof navIconMap] ?? LayoutDashboard;
   return <Component className="h-4 w-4" />;
 }
 
-export function AppShell({ children, title, subtitle, actions }: { children: React.ReactNode; title?: string; subtitle?: string; actions?: React.ReactNode }) {
+export function AppShell({ children, title, subtitle, actions, navigationItems }: { children: React.ReactNode; title?: string; subtitle?: string; actions?: React.ReactNode; navigationItems?: typeof sidebarItems }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const demoRole = useSyncExternalStore(subscribeToDemoRole, getDemoRole, getServerDemoRole);
+  const navigationSearch = useSyncExternalStore(subscribeToNavigationSearch, getNavigationSearch, getServerNavigationSearch);
 
   useEffect(() => {
     const handleResize = () => {
@@ -53,16 +87,32 @@ export function AppShell({ children, title, subtitle, actions }: { children: Rea
     return () => window.removeEventListener("srmss-preferences-changed", applyPreferences);
   }, []);
 
+  const navItems = navigationItems ?? (demoRole === "operational-staff" ? operationalStaffSidebarItems : sidebarItems);
+  const query = new URLSearchParams(navigationSearch);
+  const selectedLogTab = query.get("tab") ?? (query.get("action") === "maintenance" ? "maintenance" : "fuel");
+  const selectedSection = query.get("section") ?? "";
+
   const activeLabel = useMemo(() => {
-    const match = sidebarItems.find((item) => pathname.startsWith(item.href));
+    const match = navItems.find((item) => {
+      const [itemPath, itemSearch] = item.href.split("?");
+      if (itemSearch) {
+        const itemParams = new URLSearchParams(itemSearch);
+        const itemSec = itemParams.get("section");
+        const itemTab = itemParams.get("tab");
+        if (itemSec && itemSec === selectedSection) return true;
+        if (itemTab && itemTab === selectedLogTab) return true;
+        return false;
+      }
+      return pathname === itemPath && !selectedSection;
+    });
     return match?.label ?? "Dashboard";
-  }, [pathname]);
+  }, [navItems, pathname, selectedLogTab, selectedSection]);
 
   return (
     <div className="min-h-screen bg-[var(--page-bg)] text-[var(--text-primary)]">
       <div className="flex min-h-screen">
         <aside
-          className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--text-on-dark)] shadow-xl transition-all duration-300 lg:static ${sidebarCollapsed ? "w-20" : "w-72"} ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+          className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] text-[var(--text-on-dark)] shadow-xl transition-all duration-300 lg:sticky lg:top-0 lg:h-screen ${sidebarCollapsed ? "w-20" : "w-72"} ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
         >
           <div className="flex items-center justify-between border-b border-white/10 p-4">
             <div className={`flex items-center gap-3 ${sidebarCollapsed ? "justify-center" : ""}`}>
@@ -85,9 +135,19 @@ export function AppShell({ children, title, subtitle, actions }: { children: Rea
             </button>
           </div>
 
-          <nav className="flex-1 space-y-2 p-3">
-            {sidebarItems.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+            {navItems.map((item) => {
+              const [itemPath, itemSearch] = item.href.split("?");
+              let isActive = false;
+              if (itemSearch) {
+                const itemParams = new URLSearchParams(itemSearch);
+                const itemSec = itemParams.get("section");
+                const itemTab = itemParams.get("tab");
+                if (itemSec && itemSec === selectedSection && pathname === itemPath) isActive = true;
+                else if (itemTab && itemTab === selectedLogTab && pathname === itemPath) isActive = true;
+              } else {
+                isActive = (pathname === itemPath || (pathname.startsWith(`${itemPath}/`) && itemPath !== "/")) && !selectedSection;
+              }
               return (
                 <Link
                   key={item.href}
@@ -103,7 +163,18 @@ export function AppShell({ children, title, subtitle, actions }: { children: Rea
           </nav>
 
           <div className={`border-t border-white/10 p-3 ${sidebarCollapsed ? "px-2" : ""}`}>
-            <button type="button" className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 ${sidebarCollapsed ? "justify-center" : ""}`}>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.localStorage.removeItem("srmss-demo-auth");
+                  window.localStorage.removeItem("srmss-demo-role");
+                  window.dispatchEvent(new Event("srmss-demo-role-changed"));
+                  window.location.href = "/login";
+                }
+              }}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-300 transition hover:bg-white/5 ${sidebarCollapsed ? "justify-center" : ""}`}
+            >
               <LogOut className="h-4 w-4" />
               {!sidebarCollapsed && <span>Sign out</span>}
             </button>
@@ -139,13 +210,18 @@ export function AppShell({ children, title, subtitle, actions }: { children: Rea
                 <button type="button" className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-2 text-[var(--text-primary)] transition hover:bg-[var(--soft)]" aria-label="Toggle theme" title="Toggle theme" onClick={toggleTheme}>
                   {theme === "light" ? <MoonStar className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
                 </button>
-                <div className="hidden items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 sm:flex">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-white">AD</div>
-                  <div className="text-left">
-                    <div className="text-sm font-semibold text-[var(--text-primary)]">A. De Silva</div>
-                    <div className="text-[11px] text-[var(--text-muted)]">Depot Administrator</div>
+                <div className="hidden items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1.5 sm:flex">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-white">
+                    {demoRole === "operational-staff" ? "KB" : "AD"}
                   </div>
-                  <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
+                  <div className="text-left">
+                    <div className="text-sm font-semibold text-[var(--text-primary)]">
+                      {demoRole === "operational-staff" ? "K. Bandara" : "A. De Silva"}
+                    </div>
+                    <div className="text-[11px] text-[var(--text-muted)]">
+                      {demoRole === "operational-staff" ? "Operational Staff / Depot Clerk" : "Depot Administrator"}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import { Plus, PencilLine, Trash2 } from "lucide-react";
 import { AppShell, ConfirmationModal, PageHeader, PrimaryButton, SearchField, StatusBadge, TableCard } from "@/components/shell";
 import { RecordDialog, RecordField } from "@/components/record-dialog";
@@ -28,14 +30,18 @@ const maintenanceFields: RecordField[] = [
 const emptyFuel = { date: "2026-10-02", busNo: busData[0].busNo, route: routeData[0].name, fuelLiters: "", cost: "", remarks: "" };
 const emptyMaintenance = { vehicle: busData[0].busNo, type: "Routine Maintenance", date: "2026-10-02", nextServiceDate: "2026-11-02", status: "Scheduled", remarks: "" };
 
-export default function FuelMaintenancePage() {
+function FuelMaintenanceContent() {
   const fuel = usePersistentCollection("srmss-fuel-records", fuelRecords);
   const maintenance = usePersistentCollection("srmss-maintenance-records", maintenanceRecords);
   const { records: buses } = usePersistentCollection("srmss-buses", busData);
   const { records: routes } = usePersistentCollection("srmss-routes", routeData);
-  const [tab, setTab] = useState<"Fuel Log" | "Maintenance Log">("Fuel Log");
+  const searchParams = useSearchParams();
+  const action = searchParams.get("action");
+  const requestedTab = searchParams.get("tab");
+  const tab = requestedTab === "maintenance" || action === "maintenance" ? "Maintenance Log" : "Fuel Log";
   const [search, setSearch] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
+  const [dismissedAction, setDismissedAction] = useState<string | null>(null);
   const [editingFuel, setEditingFuel] = useState<FuelRecord | null>(null);
   const [editingMaintenance, setEditingMaintenance] = useState<MaintenanceRecord | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ type: "fuel" | "maintenance"; id: number } | null>(null);
@@ -45,12 +51,9 @@ export default function FuelMaintenancePage() {
   const currentMaintenanceFields = maintenanceFields.map((field) => field.name === "vehicle"
     ? { ...field, options: buses.map((bus) => bus.busNo) }
     : field);
-
-  useEffect(() => {
-    const action = new URLSearchParams(window.location.search).get("action");
-    if (action === "fuel") { setTab("Fuel Log"); setDialogOpen(true); }
-    if (action === "maintenance") { setTab("Maintenance Log"); setDialogOpen(true); }
-  }, []);
+  const dialogOpen = manualDialogOpen || (Boolean(action) && dismissedAction !== action);
+  const openDialog = () => { setManualDialogOpen(true); setDismissedAction(null); };
+  const closeDialog = () => { setManualDialogOpen(false); if (action) setDismissedAction(action); };
 
   const filteredFuel = useMemo(() => fuel.records.filter((record) => `${record.busNo} ${record.route}`.toLowerCase().includes(search.toLowerCase())), [fuel.records, search]);
   const filteredMaintenance = useMemo(() => maintenance.records.filter((record) => `${record.vehicle} ${record.type}`.toLowerCase().includes(search.toLowerCase())), [maintenance.records, search]);
@@ -69,7 +72,8 @@ export default function FuelMaintenancePage() {
       if (editingMaintenance) maintenance.updateRecord(editingMaintenance.id, record);
       else maintenance.addRecord(record);
     }
-    setDialogOpen(false);
+    setManualDialogOpen(false);
+    if (action) setDismissedAction(action);
     setEditingFuel(null);
     setEditingMaintenance(null);
   };
@@ -77,18 +81,18 @@ export default function FuelMaintenancePage() {
   const editRecord = (record: FuelRecord | MaintenanceRecord) => {
     if (tab === "Fuel Log") setEditingFuel(record as FuelRecord);
     else setEditingMaintenance(record as MaintenanceRecord);
-    setDialogOpen(true);
+    openDialog();
   };
 
   return (
     <AppShell title="Fuel & Maintenance" subtitle="Fuel usage and maintenance tracking for the network.">
-      <PageHeader title="Fuel & Maintenance" subtitle="Operational record tracking" action={<PrimaryButton onClick={() => { setEditingFuel(null); setEditingMaintenance(null); setDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Record</PrimaryButton>} />
+      <PageHeader title="Fuel & Maintenance" subtitle="Operational record tracking" action={<PrimaryButton onClick={() => { setEditingFuel(null); setEditingMaintenance(null); openDialog(); }}><Plus className="mr-2 h-4 w-4" /> Add Record</PrimaryButton>} />
 
       <div className="mb-6 flex flex-wrap gap-2">
         {(["Fuel Log", "Maintenance Log"] as const).map((item) => (
-          <button type="button" key={item} onClick={() => setTab(item)} className={`rounded-xl px-3 py-2 text-sm font-medium ${tab === item ? "bg-[var(--accent)] text-white" : "border border-[var(--border)] bg-[var(--panel)] text-[var(--text-primary)]"}`}>
+          <Link href={`/fuel-maintenance?tab=${item === "Fuel Log" ? "fuel" : "maintenance"}`} key={item} className={`rounded-xl px-3 py-2 text-sm font-medium ${tab === item ? "bg-[var(--accent)] text-white" : "border border-[var(--border)] bg-[var(--panel)] text-[var(--text-primary)]"}`}>
             {item}
-          </button>
+          </Link>
         ))}
       </div>
 
@@ -198,7 +202,7 @@ export default function FuelMaintenancePage() {
           status: editingMaintenance.status,
           remarks: editingMaintenance.remarks,
         } : emptyMaintenance}
-        onClose={() => { setDialogOpen(false); setEditingFuel(null); setEditingMaintenance(null); }}
+        onClose={() => { closeDialog(); setEditingFuel(null); setEditingMaintenance(null); }}
         onSubmit={saveRecord}
       />
       <ConfirmationModal
@@ -214,4 +218,8 @@ export default function FuelMaintenancePage() {
       />
     </AppShell>
   );
+}
+
+export default function FuelMaintenancePage() {
+  return <Suspense fallback={<div className="p-8 text-sm text-[var(--text-muted)]">Loading operational logs...</div>}><FuelMaintenanceContent /></Suspense>;
 }

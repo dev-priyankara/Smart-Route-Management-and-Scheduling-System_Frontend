@@ -44,10 +44,11 @@ export default function LoginPage() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("srmss-demo-auth", "true");
-    }
-    router.push("/dashboard");
+    const isOperationalStaff = form.email.trim().toLowerCase() === "depot.clerk@srmss.lk";
+    window.localStorage.setItem("srmss-demo-auth", "true");
+    window.localStorage.setItem("srmss-demo-role", isOperationalStaff ? "operational-staff" : "depot-supervisor");
+    window.dispatchEvent(new Event("srmss-demo-role-changed"));
+    router.push(isOperationalStaff ? "/operational-staff" : "/dashboard");
   };
 
   const onRegister = (event: React.FormEvent) => {
@@ -120,9 +121,37 @@ export default function LoginPage() {
             <div className="auth-slider-window">
               <div className={`auth-slider-track${mode === "register" ? " auth-slider-track-register" : ""}`}>
                 <section className="auth-slide p-6 pt-4 sm:p-8 sm:pt-5" role="tabpanel" aria-label="Sign in" aria-hidden={mode !== "signin"} inert={mode !== "signin"}>
-            <div className="mb-5 rounded-xl border border-[var(--border)] bg-[var(--soft)] px-3 py-3 text-sm text-[var(--text-secondary)]">
-              <div><span className="font-medium text-[var(--text-primary)]">Demo account</span><br /><span>depot.admin@srmss.lk</span><br /><span>SRMSS2026!</span></div>
-              <button type="button" onClick={() => { setForm({ email: "depot.admin@srmss.lk", password: "SRMSS2026!" }); setErrors({}); }} className="mt-2 text-xs font-semibold text-[var(--accent)] hover:underline">Use demo login</button>
+            <div className="mb-5 space-y-3 rounded-xl border border-[var(--border)] bg-[var(--soft)] p-3 text-sm text-[var(--text-secondary)]">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-medium text-[var(--text-primary)]">Depot Supervisor / Manager</div>
+                  <div className="text-xs text-[var(--text-muted)]">depot.admin@srmss.lk · SRMSS2026!</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => { setForm({ email: "depot.admin@srmss.lk", password: "SRMSS2026!" }); setErrors({}); }} className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--soft)]">Fill</button>
+                  <button type="button" onClick={() => {
+                    window.localStorage.setItem("srmss-demo-auth", "true");
+                    window.localStorage.setItem("srmss-demo-role", "depot-supervisor");
+                    window.dispatchEvent(new Event("srmss-demo-role-changed"));
+                    router.push("/dashboard");
+                  }} className="rounded-lg bg-[var(--accent)] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[var(--accent-dark)]">Direct Login</button>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-medium text-[var(--text-primary)]">Operational Staff / Depot Clerk</div>
+                  <div className="text-xs text-[var(--text-muted)]">depot.clerk@srmss.lk · Clerk2026!</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => { setForm({ email: "depot.clerk@srmss.lk", password: "Clerk2026!" }); setErrors({}); }} className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--soft)]">Fill</button>
+                  <button type="button" onClick={() => {
+                    window.localStorage.setItem("srmss-demo-auth", "true");
+                    window.localStorage.setItem("srmss-demo-role", "operational-staff");
+                    window.dispatchEvent(new Event("srmss-demo-role-changed"));
+                    router.push("/operational-staff");
+                  }} className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Login as Clerk</button>
+                </div>
+              </div>
             </div>
 
             {notice && <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" role="status">{notice}</p>}

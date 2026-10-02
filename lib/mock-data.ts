@@ -82,6 +82,17 @@ export const sidebarItems = [
   { label: "Settings", href: "/settings", icon: "Settings" },
 ];
 
+export const operationalStaffSidebarItems = [
+  { label: "Dashboard", href: "/operational-staff", icon: "LayoutDashboard" },
+  { label: "View Routes", href: "/operational-staff?section=routes", icon: "Route" },
+  { label: "View Schedules", href: "/operational-staff?section=schedules", icon: "CalendarDays" },
+  { label: "Update Trip Status", href: "/operational-staff?section=trip-status", icon: "Activity" },
+  { label: "Record Fuel Usage", href: "/operational-staff?section=fuel", icon: "Fuel" },
+  { label: "Record Maintenance", href: "/operational-staff?section=maintenance", icon: "Wrench" },
+  { label: "Bus Availability", href: "/operational-staff?section=buses", icon: "Bus" },
+  { label: "Driver Assignments", href: "/operational-staff?section=drivers", icon: "Users" },
+];
+
 export const routeData: DepotRoute[] = [
   {
     id: 1,
