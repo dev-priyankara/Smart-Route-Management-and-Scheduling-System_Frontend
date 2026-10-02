@@ -1,13 +1,24 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { AlertTriangle, Bus, CalendarDays, Fuel, Gauge, Route, Users, Wrench } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { AppShell, MetricCard, PageHeader, PrimaryButton, QuickActionCard, SectionCard, StatusBadge, TableCard } from "@/components/shell";
 import { todaysTrips, fleetUtilization, liveTripStatus, summaryKpis } from "@/lib/mock-data";
+import { DashboardPreferences, defaultPreferences, readPreferences } from "@/lib/preferences";
 
 const pieColors = ["#146CFA", "#00AEEF", "#cbd5e1"];
 
 export default function DashboardPage() {
+  const [preferences, setPreferences] = useState<DashboardPreferences>(defaultPreferences);
+
+  useEffect(() => {
+    const syncPreferences = () => setPreferences(readPreferences());
+    syncPreferences();
+    window.addEventListener("srmss-preferences-changed", syncPreferences);
+    return () => window.removeEventListener("srmss-preferences-changed", syncPreferences);
+  }, []);
+
   return (
     <AppShell title="Dashboard" subtitle="Overview of current depot operations.">
       <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -17,8 +28,8 @@ export default function DashboardPage() {
         <MetricCard label="On-Time Rate" value="92.4%" change="+1.8%" icon={Gauge} accent="blue" />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.65fr_0.95fr]">
-        <SectionCard title="Today's Trips" subtitle="Live route dispatch positions" action={<PrimaryButton>Filter</PrimaryButton>}>
+      <div className={`grid gap-6 ${preferences.dashboardWidgets.trips ? "xl:grid-cols-[1.65fr_0.95fr]" : ""}`}>
+        {preferences.dashboardWidgets.trips && <SectionCard title="Today's Trips" subtitle="Live route dispatch positions" action={<PrimaryButton>Filter</PrimaryButton>}>
           <TableCard
             headers={["Route", "Bus No.", "Driver", "Status", "Departure", "Arrival"]}
             rows={todaysTrips.map((trip) => (
@@ -34,7 +45,7 @@ export default function DashboardPage() {
             emptyTitle="No trips scheduled"
             emptyDescription="No trips available today."
           />
-        </SectionCard>
+        </SectionCard>}
 
         <SectionCard title="Vehicle Utilization" subtitle="Fleet capacity usage">
           <div className="h-56">
@@ -45,7 +56,7 @@ export default function DashboardPage() {
                     <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number) => [`${value}%`, "Utilization"]} />
+                <Tooltip formatter={(value) => [`${value ?? 0}%`, "Utilization"]} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -57,7 +68,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <SectionCard title="Live Trip Status" subtitle="Current route movement">
+        {preferences.dashboardWidgets.liveStatus && <SectionCard title="Live Trip Status" subtitle="Current route movement">
           <div className="space-y-4">
             {liveTripStatus.map((trip) => (
               <div key={trip.route} className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] px-4 py-3">
@@ -72,7 +83,7 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
-        </SectionCard>
+        </SectionCard>}
 
         <SectionCard title="Operational Summary" subtitle="Depot control center snapshot">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -96,17 +107,17 @@ export default function DashboardPage() {
         </SectionCard>
       </div>
 
-      <div className="mt-6">
+      {preferences.dashboardWidgets.quickActions && <div className="mt-6">
         <PageHeader title="Quick Actions" subtitle="Operational tasks" />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <QuickActionCard title="Add Route" icon={Route} description="Create a new depot route and assign a driver and bus." />
-          <QuickActionCard title="Create Schedule" icon={CalendarDays} description="Schedule trips for daily, weekly, or monthly dispatch windows." />
-          <QuickActionCard title="Add Vehicle" icon={Bus} description="Register a new bus and track its current service status." />
-          <QuickActionCard title="Add Driver" icon={Users} description="Assign driver rosters and planned route coverage." />
-          <QuickActionCard title="Log Fuel" icon={Fuel} description="Capture fuel usage and cost details for each route." />
-          <QuickActionCard title="Record Maintenance" icon={Wrench} description="Track routine and corrective maintenance work." />
+          <QuickActionCard title="Add Route" href="/routes?action=create" icon={Route} description="Create a new depot route and assign a driver and bus." />
+          <QuickActionCard title="Create Schedule" href="/schedules?action=create" icon={CalendarDays} description="Schedule trips for daily, weekly, or monthly dispatch windows." />
+          <QuickActionCard title="Add Vehicle" href="/buses?action=create" icon={Bus} description="Register a new bus and track its current service status." />
+          <QuickActionCard title="Add Driver" href="/drivers?action=create" icon={Users} description="Assign driver rosters and planned route coverage." />
+          <QuickActionCard title="Log Fuel" href="/fuel-maintenance?action=fuel" icon={Fuel} description="Capture fuel usage and cost details for each route." />
+          <QuickActionCard title="Record Maintenance" href="/fuel-maintenance?action=maintenance" icon={Wrench} description="Track routine and corrective maintenance work." />
         </div>
-      </div>
+      </div>}
     </AppShell>
   );
 }

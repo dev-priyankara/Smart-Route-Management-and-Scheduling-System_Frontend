@@ -1,26 +1,71 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Eye, PencilLine, Plus, Trash2, Users } from "lucide-react";
-import { AppShell, Modal, PageHeader, PrimaryButton, SearchField, SecondaryButton, StatusBadge, TableCard } from "@/components/shell";
-import { driverData } from "@/lib/mock-data";
+import { AppShell, ConfirmationModal, Modal, PageHeader, PrimaryButton, SearchField, StatusBadge, TableCard } from "@/components/shell";
+import { RecordDialog, RecordField } from "@/components/record-dialog";
+import { driverData, Driver as DriverRecord, routeData } from "@/lib/mock-data";
+import { usePersistentCollection } from "@/lib/use-persistent-collection";
+
+const driverFields: RecordField[] = [
+  { name: "name", label: "Full name" },
+  { name: "licenseNumber", label: "License number" },
+  { name: "phone", label: "Phone", type: "tel" },
+  { name: "assignedRoute", label: "Assigned route", type: "select", options: routeData.map((route) => route.name) },
+  { name: "workingHours", label: "Working hours" },
+  { name: "status", label: "Status", type: "select", options: ["On Duty", "Off Duty", "Available"] },
+];
+
+const emptyDriver = { name: "", licenseNumber: "", phone: "", assignedRoute: routeData[0].name, workingHours: "06:00 - 15:00", status: "Available" };
 
 export default function DriversPage() {
+  const { records: drivers, addRecord, updateRecord, removeRecord } = usePersistentCollection("srmss-drivers", driverData);
+  const { records: routes } = usePersistentCollection("srmss-routes", routeData);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [selectedDriver, setSelectedDriver] = useState<(typeof driverData)[number] | null>(null);
+  const [selectedDriver, setSelectedDriver] = useState<DriverRecord | null>(null);
+  const [editingDriver, setEditingDriver] = useState<DriverRecord | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<number | null>(null);
+  const currentDriverFields = driverFields.map((field) => field.name === "assignedRoute"
+    ? { ...field, options: routes.map((route) => route.name) }
+    : field);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("action") === "create") setDialogOpen(true);
+  }, []);
 
   const filteredDrivers = useMemo(() => {
-    return driverData.filter((driver) => {
+    return drivers.filter((driver) => {
       const matchesSearch = `${driver.name} ${driver.licenseNumber} ${driver.assignedRoute}`.toLowerCase().includes(search.toLowerCase());
       const matchesStatus = statusFilter === "All" || driver.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [search, statusFilter]);
+  }, [drivers, search, statusFilter]);
+
+  const openEditor = (driver: DriverRecord | null) => {
+    setEditingDriver(driver);
+    setDialogOpen(true);
+  };
+
+  const saveDriver = (values: Record<string, string>) => {
+    const driver = {
+      name: values.name.trim(),
+      licenseNumber: values.licenseNumber.trim(),
+      phone: values.phone.trim(),
+      assignedRoute: values.assignedRoute,
+      workingHours: values.workingHours.trim(),
+      status: values.status as DriverRecord["status"],
+    };
+    if (editingDriver) updateRecord(editingDriver.id, driver);
+    else addRecord(driver);
+    setDialogOpen(false);
+    setEditingDriver(null);
+  };
 
   return (
     <AppShell title="Drivers" subtitle="Driver roster, assignments and working state.">
-      <PageHeader title="Driver Management" subtitle="Staff availability and route coverage" action={<PrimaryButton><Plus className="mr-2 h-4 w-4" /> Add Driver</PrimaryButton>} />
+      <PageHeader title="Driver Management" subtitle="Staff availability and route coverage" action={<PrimaryButton onClick={() => openEditor(null)}><Plus className="mr-2 h-4 w-4" /> Add Driver</PrimaryButton>} />
 
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="w-full max-w-lg"><SearchField value={search} onChange={setSearch} placeholder="Search drivers" /></div>
@@ -48,8 +93,8 @@ export default function DriversPage() {
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setSelectedDriver(driver)} className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] hover:bg-[var(--soft)]" title="View details"><Eye className="h-4 w-4" /></button>
-              <button type="button" className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] hover:bg-[var(--soft)]" title="Edit"><PencilLine className="h-4 w-4" /></button>
-              <button type="button" className="rounded-lg border border-[var(--border)] p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10" title="Delete"><Trash2 className="h-4 w-4" /></button>
+              <button type="button" onClick={() => openEditor(driver)} className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] hover:bg-[var(--soft)]" title="Edit"><PencilLine className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setPendingDelete(driver.id)} className="rounded-lg border border-[var(--border)] p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10" title="Delete"><Trash2 className="h-4 w-4" /></button>
             </div>
           </div>
         ))}
@@ -69,8 +114,8 @@ export default function DriversPage() {
               <td className="px-4 py-3">
                 <div className="flex gap-2">
                   <button type="button" onClick={() => setSelectedDriver(driver)} className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] hover:bg-[var(--soft)]"><Eye className="h-4 w-4" /></button>
-                  <button type="button" className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] hover:bg-[var(--soft)]"><PencilLine className="h-4 w-4" /></button>
-                  <button type="button" className="rounded-lg border border-[var(--border)] p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"><Trash2 className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => openEditor(driver)} className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] hover:bg-[var(--soft)]" title="Edit"><PencilLine className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setPendingDelete(driver.id)} className="rounded-lg border border-[var(--border)] p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10" title="Delete"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </td>
             </>
@@ -110,6 +155,28 @@ export default function DriversPage() {
           </div>
         )}
       </Modal>
+      <RecordDialog
+        open={dialogOpen}
+        title={editingDriver ? "Edit driver" : "Add driver"}
+        fields={currentDriverFields}
+        initialValues={editingDriver ? {
+          name: editingDriver.name,
+          licenseNumber: editingDriver.licenseNumber,
+          phone: editingDriver.phone,
+          assignedRoute: editingDriver.assignedRoute,
+          workingHours: editingDriver.workingHours,
+          status: editingDriver.status,
+        } : emptyDriver}
+        onClose={() => { setDialogOpen(false); setEditingDriver(null); }}
+        onSubmit={saveDriver}
+      />
+      <ConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete driver"
+        message="This driver and their local demo record will be removed. Continue?"
+        onConfirm={() => { if (pendingDelete !== null) removeRecord(pendingDelete); setPendingDelete(null); }}
+        onClose={() => setPendingDelete(null)}
+      />
     </AppShell>
   );
 }

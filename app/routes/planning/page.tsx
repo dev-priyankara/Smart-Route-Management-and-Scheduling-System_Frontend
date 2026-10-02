@@ -3,20 +3,25 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, MapPinned, Minus, Plus, Save, X } from "lucide-react";
 import { AppShell, InputField, MapCard, Modal, PageHeader, PrimaryButton, SecondaryButton, SelectField, StatusBadge } from "@/components/shell";
+import { busData, driverData, routeData, DepotRoute } from "@/lib/mock-data";
+import { usePersistentCollection } from "@/lib/use-persistent-collection";
 
 const initialForm = {
-  routeName: "Colombo - Kandy",
-  startPoint: "Colombo",
-  endPoint: "Kandy",
-  totalDistance: "142",
-  serviceType: "Express",
+  routeName: "",
+  startPoint: "",
+  endPoint: "",
+  totalDistance: "",
+  serviceType: "Normal",
   busAssignment: "NP-2201",
   driverAssignment: "S. Perera",
 };
 
 export default function RoutePlanningPage() {
+  const { addRecord } = usePersistentCollection("srmss-routes", routeData);
+  const { records: buses } = usePersistentCollection("srmss-buses", busData);
+  const { records: drivers } = usePersistentCollection("srmss-drivers", driverData);
   const [form, setForm] = useState(initialForm);
-  const [stops, setStops] = useState(["Kelaniya", "Kurunegala", "Dambulla"]);
+  const [stops, setStops] = useState<string[]>([]);
   const [newStop, setNewStop] = useState("");
   const [showSavedToast, setShowSavedToast] = useState(false);
 
@@ -41,6 +46,20 @@ export default function RoutePlanningPage() {
   };
 
   const handleSave = () => {
+    const assignedBus = buses.find((bus) => bus.busNo === form.busAssignment);
+    const assignedDriver = drivers.find((driver) => driver.name === form.driverAssignment);
+    addRecord({
+      name: form.routeName.trim(),
+      start: form.startPoint.trim(),
+      end: form.endPoint.trim(),
+      stops,
+      distance: Number(form.totalDistance),
+      serviceType: form.serviceType as DepotRoute["serviceType"],
+      busId: assignedBus?.id ?? 0,
+      driverId: assignedDriver?.id ?? 0,
+      status: "Planned",
+      color: "#146CFA",
+    });
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 1900);
   };
@@ -64,9 +83,9 @@ export default function RoutePlanningPage() {
             <InputField label="Start Point" value={form.startPoint} onChange={(value) => setForm((current) => ({ ...current, startPoint: value }))} placeholder="Colombo" />
             <InputField label="End Point" value={form.endPoint} onChange={(value) => setForm((current) => ({ ...current, endPoint: value }))} placeholder="Kandy" />
             <SelectField label="Service Type" value={form.serviceType} onChange={(value) => setForm((current) => ({ ...current, serviceType: value }))} options={["Normal", "Express", "Rural Service"]} />
-            <SelectField label="Bus Assignment" value={form.busAssignment} onChange={(value) => setForm((current) => ({ ...current, busAssignment: value }))} options={["NP-2201", "KA-3324", "GL-1188", "KU-5549", "NE-7712", "MT-6678"]} />
+            <SelectField label="Bus Assignment" value={form.busAssignment} onChange={(value) => setForm((current) => ({ ...current, busAssignment: value }))} options={buses.map((bus) => bus.busNo)} />
             <div className="md:col-span-2">
-              <SelectField label="Driver Assignment" value={form.driverAssignment} onChange={(value) => setForm((current) => ({ ...current, driverAssignment: value }))} options={["S. Perera", "N. Silva", "R. Fernando", "M. Jayawardena", "T. Kumara", "H. Wanigasekara"]} />
+              <SelectField label="Driver Assignment" value={form.driverAssignment} onChange={(value) => setForm((current) => ({ ...current, driverAssignment: value }))} options={drivers.map((driver) => driver.name)} />
             </div>
           </div>
 

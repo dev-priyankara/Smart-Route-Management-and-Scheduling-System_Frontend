@@ -6,6 +6,7 @@ import { Bell, Bus, CalendarDays, ChevronDown, Fuel, LayoutDashboard, LogOut, Me
 import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { sidebarItems } from "@/lib/mock-data";
+import { readPreferences } from "@/lib/preferences";
 
 const navIconMap = {
   LayoutDashboard,
@@ -35,6 +36,21 @@ export function AppShell({ children, title, subtitle, actions }: { children: Rea
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const applyPreferences = () => {
+      const preferences = readPreferences();
+      const darkAccent: Record<string, string> = { "#146cfa": "#0d4ec9", "#00866a": "#00634d", "#d05a28": "#a8421b", "#a63f57": "#853047" };
+      document.documentElement.style.setProperty("--accent", preferences.accent);
+      document.documentElement.style.setProperty("--accent-dark", darkAccent[preferences.accent] ?? "#0d4ec9");
+      document.documentElement.style.setProperty("--accent-soft", `${preferences.accent}1f`);
+      document.documentElement.classList.toggle("compact-tables", preferences.compactTables);
+      setSidebarCollapsed(preferences.sidebarCollapsed);
+    };
+    applyPreferences();
+    window.addEventListener("srmss-preferences-changed", applyPreferences);
+    return () => window.removeEventListener("srmss-preferences-changed", applyPreferences);
   }, []);
 
   const activeLabel = useMemo(() => {
@@ -294,7 +310,7 @@ export function Modal({ open, title, subtitle, onClose, children }: { open: bool
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-2xl">
+      <div className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-2xl">
         <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
           <div>
             <h3 className="text-lg font-semibold text-[var(--text-primary)]">{title}</h3>
@@ -359,6 +375,10 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
 }
 
 export function MapCard({ routeName, start, end, stops }: { routeName: string; start: string; end: string; stops: string[] }) {
+  const destination = [...stops, end].join(" to ");
+  const mapUrl = `https://maps.google.com/maps?saddr=${encodeURIComponent(start)}&daddr=${encodeURIComponent(destination)}&output=embed`;
+  const directionsUrl = `https://www.google.com/maps/dir/${[start, ...stops, end].map((place) => encodeURIComponent(place)).join("/")}`;
+
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-[var(--shadow-soft)]">
       <div className="mb-4 flex items-center justify-between">
@@ -366,21 +386,20 @@ export function MapCard({ routeName, start, end, stops }: { routeName: string; s
           <h3 className="text-base font-semibold text-[var(--text-primary)]">{routeName}</h3>
           <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-muted)]">Route map</p>
         </div>
-        <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--soft)] px-3 py-2 text-xs font-medium text-[var(--text-primary)]">
+        <a href={directionsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--soft)] px-3 py-2 text-xs font-medium text-[var(--text-primary)]">
           <MapPinned className="h-3.5 w-3.5" /> Route view
-        </button>
+        </a>
       </div>
-      <div className="relative h-52 overflow-hidden rounded-2xl border border-[var(--border)] bg-[radial-gradient(circle_at_top,_rgba(20,108,250,0.14),_transparent_50%),linear-gradient(135deg,#edf5ff_0%,#e8edf8_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(20,108,250,0.2),_transparent_55%),linear-gradient(135deg,#0f172a_0%,#111827_100%)]">
-        <div className="absolute left-6 top-10 h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.8)]" />
-        <div className="absolute left-1/2 top-2/3 h-2.5 w-2.5 rounded-full bg-[var(--accent)] shadow-[0_0_18px_rgba(20,108,250,0.8)]" />
-        <div className="absolute right-7 top-16 h-2.5 w-2.5 rounded-full bg-rose-500 shadow-[0_0_18px_rgba(244,63,94,0.8)]" />
-        <div className="absolute left-7 top-10 right-7 bottom-10 rounded-[30px] border border-dashed border-[var(--accent)]/40" />
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 400 210" preserveAspectRatio="none">
-          <path d="M40 90 C120 30, 160 70, 180 110 S260 180, 320 90" fill="none" stroke="#146CFA" strokeWidth="4" strokeDasharray="8 8" />
-        </svg>
-        <div className="absolute left-6 top-12 text-[10px] font-medium text-[var(--text-primary)]">{start}</div>
-        <div className="absolute right-5 top-12 text-[10px] font-medium text-[var(--text-primary)]">{end}</div>
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--accent)]/20 bg-white/60 px-2 py-1 text-[10px] font-semibold text-[var(--text-primary)] backdrop-blur-sm dark:bg-slate-800/60">{stops.length} stops</div>
+      <iframe
+        title={`Google Maps route: ${routeName}`}
+        src={mapUrl}
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+        className="h-64 w-full rounded-xl border-0"
+      />
+      <div className="mt-3 flex items-center justify-between text-xs text-[var(--text-muted)]">
+        <span>{start} to {end}</span>
+        <span>{stops.length} intermediate stops</span>
       </div>
     </div>
   );
@@ -416,15 +435,15 @@ export function Toast({ message, visible }: { message: string; visible: boolean 
   );
 }
 
-export function QuickActionCard({ title, icon: Icon, description }: { title: string; icon: typeof Plus; description: string }) {
+export function QuickActionCard({ title, icon: Icon, description, href }: { title: string; icon: typeof Plus; description: string; href: string }) {
   return (
-    <button type="button" className="group rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 text-left shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5 hover:border-[var(--accent)]/40 hover:shadow-lg">
+    <Link href={href} className="group rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 text-left shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5 hover:border-[var(--accent)]/40 hover:shadow-lg">
       <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
         <Icon className="h-5 w-5" />
       </div>
       <div className="text-base font-semibold text-[var(--text-primary)]">{title}</div>
       <div className="mt-1 text-sm text-[var(--text-muted)]">{description}</div>
-    </button>
+    </Link>
   );
 }
 

@@ -85,7 +85,7 @@ export default function ReportsPage() {
         </ChartCard>
       </div>
 
-      <div className="mt-6 report-sheet rounded-2xl border border-[var(--border)] bg-white p-6 text-slate-900 shadow-[var(--shadow-soft)] no-print">
+      <div className="mt-6 report-sheet rounded-2xl border border-[var(--border)] bg-white p-6 text-slate-900 shadow-[var(--shadow-soft)]">
         <div className="mb-5 flex items-start justify-between border-b border-slate-200 pb-4">
           <div>
             <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Depot report</div>

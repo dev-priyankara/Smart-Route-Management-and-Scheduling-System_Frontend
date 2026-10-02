@@ -91,14 +91,32 @@ textarea {
     background: white !important;
   }
 
+  body * {
+    visibility: hidden;
+  }
+
   .no-print {
     display: none !important;
   }
 
+  .report-sheet,
+  .report-sheet * {
+    visibility: visible;
+  }
+
   .report-sheet {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
     box-shadow: none !important;
     border: 1px solid #dfe7f2 !important;
   }
+}
+
+html.compact-tables table td,
+html.compact-tables table th {
+  padding-block: 0.45rem !important;
 }
 
   .landing-page {
