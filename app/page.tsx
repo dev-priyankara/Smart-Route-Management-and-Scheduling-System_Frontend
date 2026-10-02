@@ -128,7 +128,7 @@ function DashboardPreview({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export default function HomePage() {
+export function LegacyHomePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [compact, setCompact] = useState(false);
 
@@ -230,3 +230,5 @@ export default function HomePage() {
     </main>
   );
 }
+
+export { default } from "@/components/public-home";

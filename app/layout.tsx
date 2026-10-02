@@ -10,7 +10,7 @@ const jakarta = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: "SRMSS | Smart Route Management and Scheduling System",
-  description: "Professional public transport depot management dashboard for route planning, scheduling, fleet operations, maintenance, and analytics.",
+  description: "SRMSS connects public transport routes, schedules, vehicles, depot operations and travel information across Sri Lanka.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
