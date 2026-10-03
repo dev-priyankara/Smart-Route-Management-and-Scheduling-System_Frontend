@@ -73,13 +73,14 @@ export type MaintenanceRecord = {
 
 export const sidebarItems = [
   { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
-  { label: "Routes", href: "/routes", icon: "Route" },
-  { label: "Schedules", href: "/schedules", icon: "CalendarDays" },
-  { label: "Buses", href: "/buses", icon: "Bus" },
-  { label: "Drivers", href: "/drivers", icon: "Users" },
-  { label: "Fuel & Maintenance", href: "/fuel-maintenance", icon: "Fuel" },
-  { label: "Reports & Analytics", href: "/reports", icon: "BarChart3" },
-  { label: "Settings", href: "/settings", icon: "Settings" },
+  { label: "Control Board", href: "/dashboard?section=control", icon: "Activity" },
+  { label: "Fleet Management", href: "/dashboard?section=fleet", icon: "Bus" },
+  { label: "Driver Roster", href: "/dashboard?section=drivers", icon: "Users" },
+  { label: "Route Network", href: "/dashboard?section=routes", icon: "Route" },
+  { label: "Timetable", href: "/dashboard?section=schedules", icon: "CalendarDays" },
+  { label: "Conflict Center", href: "/dashboard?section=conflicts", icon: "AlertTriangle" },
+  { label: "Exceptions", href: "/dashboard?section=exceptions", icon: "Wrench" },
+  { label: "Analytics & Reports", href: "/dashboard?section=analytics", icon: "BarChart3" },
 ];
 
 export const operationalStaffSidebarItems = [
@@ -308,3 +309,95 @@ export const reportsKpis = [
   { label: "On-Time Rate", value: "92.4%", detail: "+1.8%" },
   { label: "Fuel Consumption", value: "5,620 L", detail: "+320 L" },
 ];
+
+export type ScheduleConflict = {
+  id: number;
+  route: string;
+  time: string;
+  resource: string;
+  reason: string;
+  severity: "Critical" | "Warning";
+  status: "Unresolved" | "Resolved";
+};
+
+export type OperationalException = {
+  id: number;
+  type: "Delayed Trip" | "Bus Breakdown" | "Driver Unavailable" | "Schedule Disruption";
+  route: string;
+  entity: string;
+  time: string;
+  reason: string;
+  status: "Open" | "In Progress" | "Resolved";
+  resolutionNote?: string;
+};
+
+export const supervisorConflictsData: ScheduleConflict[] = [
+  {
+    id: 1,
+    route: "Kandy - Matale",
+    time: "07:15 - 08:00",
+    resource: "Bus KA-3324 Overlap",
+    reason: "Bus KA-3324 scheduled for departure overlaps with maintenance service window.",
+    severity: "Critical",
+    status: "Unresolved",
+  },
+  {
+    id: 2,
+    route: "Kurunegala - Puttalam",
+    time: "09:10 - 10:40",
+    resource: "Driver M. Jayawardena Double Booked",
+    reason: "Driver M. Jayawardena assigned to Kurunegala-Puttalam while on mandatory break.",
+    severity: "Warning",
+    status: "Unresolved",
+  },
+  {
+    id: 3,
+    route: "Colombo - Kandy",
+    time: "07:30 - 10:05",
+    resource: "Express Corridor Slot Conflict",
+    reason: "Trip departure time overlaps with incoming express intercity arrival.",
+    severity: "Warning",
+    status: "Resolved",
+  },
+];
+
+export const supervisorExceptionsData: OperationalException[] = [
+  {
+    id: 1,
+    type: "Bus Breakdown",
+    route: "Galle - Matara",
+    entity: "Bus GL-1188",
+    time: "08:45",
+    reason: "Coolant leak and suspension noise reported near Hikkaduwa depot.",
+    status: "Open",
+  },
+  {
+    id: 2,
+    type: "Driver Unavailable",
+    route: "Kurunegala - Puttalam",
+    entity: "Driver M. Jayawardena",
+    time: "08:00",
+    reason: "Driver called in sick 30 mins prior to morning shift dispatch.",
+    status: "In Progress",
+  },
+  {
+    id: 3,
+    type: "Delayed Trip",
+    route: "Kandy - Matale",
+    entity: "Bus KA-3324",
+    time: "07:15",
+    reason: "Heavy traffic bottleneck along Akurana corridor.",
+    status: "Open",
+  },
+  {
+    id: 4,
+    type: "Schedule Disruption",
+    route: "Colombo - Kandy",
+    entity: "Bus NP-2201",
+    time: "06:45",
+    reason: "Expressway lane obstruction near Kadawatha interchange.",
+    status: "Resolved",
+    resolutionNote: "Departure delayed by +15m; passengers notified.",
+  },
+];
+

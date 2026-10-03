@@ -38,6 +38,13 @@ function getServerDemoRole() {
   return "depot-supervisor";
 }
 
+function getLastDashboardSection() {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("srmss-dashboard-section") || "overview";
+  }
+  return "overview";
+}
+
 function subscribeToNavigationSearch(onChange: () => void) {
   window.addEventListener("popstate", onChange);
   return () => window.removeEventListener("popstate", onChange);
@@ -88,12 +95,34 @@ export function AppShell({ children, title, subtitle, actions, navigationItems }
   }, []);
 
   const navItems = navigationItems ?? (demoRole === "operational-staff" ? operationalStaffSidebarItems : sidebarItems);
+
+  // Dynamic nav items: update Dashboard link to last selected section
+  const dynamicNavItems = useMemo(() => {
+    return navItems.map((item) => {
+      if (item.href === "/dashboard") {
+        const lastSection = getLastDashboardSection();
+        if (lastSection === "overview") return item;
+        const transformedHref = `/dashboard?section=${lastSection}`;
+        // Only transform if no other sidebar item already points to the same href
+        const hasDuplicateHref = navItems.some((other) => other !== item && other.href === transformedHref);
+        return hasDuplicateHref ? item : { ...item, href: transformedHref };
+      }
+      if (item.href === "/operational-staff") {
+        const lastSection = localStorage.getItem("srmss-operational-staff-section") || "dashboard";
+        return lastSection === "dashboard"
+          ? item
+          : { ...item, href: `/operational-staff?section=${lastSection}` };
+      }
+      return item;
+    });
+  }, [navItems, demoRole]);
+
   const query = new URLSearchParams(navigationSearch);
   const selectedLogTab = query.get("tab") ?? (query.get("action") === "maintenance" ? "maintenance" : "fuel");
   const selectedSection = query.get("section") ?? "";
 
   const activeLabel = useMemo(() => {
-    const match = navItems.find((item) => {
+    const match = dynamicNavItems.find((item) => {
       const [itemPath, itemSearch] = item.href.split("?");
       if (itemSearch) {
         const itemParams = new URLSearchParams(itemSearch);
@@ -106,7 +135,7 @@ export function AppShell({ children, title, subtitle, actions, navigationItems }
       return pathname === itemPath && !selectedSection;
     });
     return match?.label ?? "Dashboard";
-  }, [navItems, pathname, selectedLogTab, selectedSection]);
+  }, [dynamicNavItems, pathname, selectedLogTab, selectedSection]);
 
   return (
     <div className="min-h-screen bg-[var(--page-bg)] text-[var(--text-primary)]">
@@ -136,7 +165,7 @@ export function AppShell({ children, title, subtitle, actions, navigationItems }
           </div>
 
           <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-            {navItems.map((item) => {
+            {dynamicNavItems.map((item) => {
               const [itemPath, itemSearch] = item.href.split("?");
               let isActive = false;
               if (itemSearch) {
@@ -274,18 +303,18 @@ export function MetricCard({ label, value, change, icon: Icon, accent = "blue" }
 
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5 hover:shadow-lg">
-      <div className="mb-5 flex items-start justify-between">
-        <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${accentClasses[accent]}`}>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${accentClasses[accent]}`}>
           <Icon className="h-5 w-5" />
         </div>
-        <div className="text-right">
-          <div className="text-[11px] uppercase tracking-[0.14em] text-[var(--text-muted)]">{label}</div>
-          <div className="mt-2 text-3xl font-semibold text-[var(--text-primary)]">{value}</div>
+        <div className="min-w-0 text-right">
+          <div className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]" title={label}>{label}</div>
+          <div className="mt-1 text-2xl font-bold text-[var(--text-primary)] sm:text-3xl">{value}</div>
         </div>
       </div>
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-[var(--text-muted)]">Trend</span>
-        <span className="font-medium text-[var(--accent)]">{change}</span>
+      <div className="flex items-center justify-between gap-2 border-t border-[var(--border)] pt-2 text-xs">
+        <span className="shrink-0 font-medium text-[var(--text-muted)]">Status</span>
+        <span className="truncate text-right font-medium text-[var(--accent)]" title={change}>{change}</span>
       </div>
     </div>
   );

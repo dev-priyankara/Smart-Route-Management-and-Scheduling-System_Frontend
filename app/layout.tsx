@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={jakarta.variable}>
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth" className={jakarta.variable}>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
       </body>

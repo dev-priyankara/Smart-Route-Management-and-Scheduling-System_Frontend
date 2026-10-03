@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useMemo, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   Activity,
@@ -55,7 +55,22 @@ const tripStatusOptions: ScheduleItem["status"][] = ["Scheduled", "On Time", "De
 function OperationalStaffContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const currentSection = searchParams.get("section") || "dashboard";
+  const urlSection = searchParams.get("section");
+  const [currentSection, setCurrentSection] = useState(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("srmss-operational-staff-section");
+      return stored || "dashboard";
+    }
+    return "dashboard";
+  });
+
+  // Sync with URL and persist to localStorage
+  useEffect(() => {
+    if (urlSection && urlSection !== currentSection) {
+      setCurrentSection(urlSection);
+      localStorage.setItem("srmss-operational-staff-section", urlSection);
+    }
+  }, [urlSection, currentSection]);
 
   // Persistent Collections
   const { records: schedules, updateRecord: updateSchedule } = usePersistentCollection("srmss-schedules", scheduleData);
@@ -102,6 +117,8 @@ function OperationalStaffContent() {
   };
 
   const navigateSection = (sec: string) => {
+    setCurrentSection(sec);
+    localStorage.setItem("srmss-operational-staff-section", sec);
     if (sec === "dashboard") {
       router.push("/operational-staff");
     } else {

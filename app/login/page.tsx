@@ -121,35 +121,43 @@ export default function LoginPage() {
             <div className="auth-slider-window">
               <div className={`auth-slider-track${mode === "register" ? " auth-slider-track-register" : ""}`}>
                 <section className="auth-slide p-6 pt-4 sm:p-8 sm:pt-5" role="tabpanel" aria-label="Sign in" aria-hidden={mode !== "signin"} inert={mode !== "signin"}>
-            <div className="mb-5 space-y-3 rounded-xl border border-[var(--border)] bg-[var(--soft)] p-3 text-sm text-[var(--text-secondary)]">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-5 space-y-3 rounded-2xl border border-[var(--accent)]/30 bg-[var(--soft)] p-4 text-sm text-[var(--text-secondary)] shadow-sm">
+              <div className="text-xs font-bold uppercase tracking-wider text-[var(--accent)] mb-1">
+                ⚡ Quick Demo Access (1-Click Login)
+              </div>
+              <div className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="font-medium text-[var(--text-primary)]">Depot Supervisor / Manager</div>
+                  <div className="font-bold text-[var(--text-primary)]">Depot Supervisor / Manager</div>
                   <div className="text-xs text-[var(--text-muted)]">depot.admin@srmss.lk · SRMSS2026!</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => { setForm({ email: "depot.admin@srmss.lk", password: "SRMSS2026!" }); setErrors({}); }} className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--soft)]">Fill</button>
+                  <button type="button" onClick={() => { setForm({ email: "depot.admin@srmss.lk", password: "SRMSS2026!" }); setErrors({}); }} className="rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--panel)]">Fill</button>
                   <button type="button" onClick={() => {
                     window.localStorage.setItem("srmss-demo-auth", "true");
                     window.localStorage.setItem("srmss-demo-role", "depot-supervisor");
                     window.dispatchEvent(new Event("srmss-demo-role-changed"));
                     router.push("/dashboard");
-                  }} className="rounded-lg bg-[var(--accent)] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[var(--accent-dark)]">Direct Login</button>
+                  }} className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-bold text-white hover:bg-[var(--accent-dark)] shadow-sm">
+                    Login as Supervisor →
+                  </button>
                 </div>
               </div>
-              <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
+
+              <div className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="font-medium text-[var(--text-primary)]">Operational Staff / Depot Clerk</div>
+                  <div className="font-bold text-[var(--text-primary)]">Operational Staff / Depot Clerk</div>
                   <div className="text-xs text-[var(--text-muted)]">depot.clerk@srmss.lk · Clerk2026!</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => { setForm({ email: "depot.clerk@srmss.lk", password: "Clerk2026!" }); setErrors({}); }} className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--soft)]">Fill</button>
+                  <button type="button" onClick={() => { setForm({ email: "depot.clerk@srmss.lk", password: "Clerk2026!" }); setErrors({}); }} className="rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--panel)]">Fill</button>
                   <button type="button" onClick={() => {
                     window.localStorage.setItem("srmss-demo-auth", "true");
                     window.localStorage.setItem("srmss-demo-role", "operational-staff");
                     window.dispatchEvent(new Event("srmss-demo-role-changed"));
                     router.push("/operational-staff");
-                  }} className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Login as Clerk</button>
+                  }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm">
+                    Login as Clerk →
+                  </button>
                 </div>
               </div>
             </div>
