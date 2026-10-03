@@ -467,6 +467,7 @@ function SupervisorDashboardContent() {
           <span className="font-bold text-[var(--text-primary)]">A. De Silva</span>
         </div>
       </div>
+      
 
       {/* COMPACT OPERATIONAL SUMMARY CARDS */}
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

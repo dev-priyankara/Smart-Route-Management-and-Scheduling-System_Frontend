@@ -1,0 +1,1575 @@
+"use client";
+
+import { Suspense, useMemo, useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import {
+  Activity, AlertTriangle, BarChart3, Bus, CalendarDays, CheckCircle2,
+  Clock, Download, Edit2, Eye, FileText, Gauge, History, LayoutDashboard,
+  MapPin, Navigation, PencilLine, Phone, Plus, Route, Search, Settings,
+  ShieldCheck, Trash2, UserCog, Users, Wrench, X, CheckCircle, XCircle,
+} from "lucide-react";
+import {
+  AppShell, MetricCard, Modal, PageHeader, PrimaryButton,
+  SearchField, SectionCard, StatusBadge, TableCard, Toast,
+} from "@/components/shell";
+import {
+  Bus as BusRecord, busData, DepotRoute, Driver as DriverRecord, driverData,
+  OperationalException, routeData, ScheduleConflict, ScheduleItem,
+  scheduleData, supervisorConflictsData, supervisorExceptionsData,
+  maintenanceRecords, fuelRecords,
+} from "@/lib/mock-data";
+import { usePersistentCollection } from "@/lib/use-persistent-collection";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type AdminUser = {
+  id: number; name: string; email: string; role: string;
+  department: string; status: "Active" | "Inactive"; lastLogin: string;
+};
+
+type AdminDepot = {
+  id: number; name: string; location: string; manager: string;
+  buses: number; staff: number; status: "Active" | "Maintenance";
+};
+
+type ViewedRoute = DepotRoute & { assignedBusNo: string; assignedDriverName: string };
+
+const TRIP_STATUSES: ScheduleItem["status"][] = ["Scheduled", "On Time", "Delayed", "Completed"];
+const BUS_STATUSES: BusRecord["status"][] = ["Active", "In Service", "Under Maintenance", "Out of Service"];
+const DRIVER_STATUSES: DriverRecord["status"][] = ["On Duty", "Available", "Off Duty"];
+const ROLES = ["Administrator", "Supervisor", "Operational Staff"];
+const DEPARTMENTS = ["Operations", "Maintenance", "Administration"];
+const DEPOT_STATUSES = ["Active", "Maintenance"] as const;
+const SERVICE_TYPES = ["Normal", "Express", "Rural Service"] as const;
+const ROUTE_STATUSES = ["Active", "Planned", "Delayed", "Completed"] as const;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function InputRow({ label, required = true, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <label className="block text-sm text-[var(--text-secondary)]">
+      <span className="mb-1.5 block font-medium text-[var(--text-primary)]">
+        {label}{required && <span className="ml-0.5 text-rose-500">*</span>}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+const inputCls = "w-full rounded-xl border border-[var(--border)] bg-[var(--panel)] px-3 py-2.5 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)] transition";
+
+function ConfirmDeleteModal({ open, name, onConfirm, onClose }: { open: boolean; name: string; onConfirm: () => void; onClose: () => void }) {
+  return (
+    <Modal open={open} title="Confirm Delete" onClose={onClose}>
+      <div className="space-y-5">
+        <p className="text-sm text-[var(--text-secondary)]">
+          Are you sure you want to delete <strong className="text-[var(--text-primary)]">{name}</strong>? This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Cancel</button>
+          <button type="button" onClick={onConfirm} className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700">Delete</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+function AdminDashboardContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlSection = searchParams.get("section");
+
+  const [currentSection, setCurrentSection] = useState(() =>
+    typeof window !== "undefined" ? localStorage.getItem("srmss-admin-section") || "overview" : "overview"
+  );
+
+  useEffect(() => {
+    if (urlSection && urlSection !== currentSection) {
+      setCurrentSection(urlSection);
+      localStorage.setItem("srmss-admin-section", urlSection);
+    }
+  }, [urlSection, currentSection]);
+
+  const navigateSection = useCallback((sec: string) => {
+    setCurrentSection(sec);
+    localStorage.setItem("srmss-admin-section", sec);
+    router.push(sec === "overview" ? "/admin" : `/admin?section=${sec}`);
+  }, [router]);
+
+  // ── Persistent collections ──
+  const { records: schedules, addRecord: addSchedule, updateRecord: updateSchedule, removeRecord: removeSchedule } =
+    usePersistentCollection("srmss-schedules", scheduleData);
+  const { records: routes, addRecord: addRoute, updateRecord: updateRoute, removeRecord: removeRoute } =
+    usePersistentCollection("srmss-routes", routeData);
+  const { records: buses, addRecord: addBus, updateRecord: updateBus, removeRecord: removeBus } =
+    usePersistentCollection("srmss-buses", busData);
+  const { records: drivers, addRecord: addDriver, updateRecord: updateDriver, removeRecord: removeDriver } =
+    usePersistentCollection("srmss-drivers", driverData);
+  const { records: conflicts, addRecord: addConflict, updateRecord: updateConflict, removeRecord: removeConflict } =
+    usePersistentCollection("srmss-conflicts", supervisorConflictsData);
+  const { records: exceptions, addRecord: addException, updateRecord: updateException, removeRecord: removeException } =
+    usePersistentCollection("srmss-exceptions", supervisorExceptionsData);
+  const { records: maintenance, addRecord: addMaintenance, updateRecord: updateMaintenance, removeRecord: removeMaintenance } =
+    usePersistentCollection("srmss-maintenance", maintenanceRecords);
+  const { records: fuel, addRecord: addFuel, updateRecord: updateFuel, removeRecord: removeFuel } =
+    usePersistentCollection("srmss-fuel-records", fuelRecords);
+
+  // ── Local state collections ──
+  const [users, setUsers] = useState<AdminUser[]>([
+    { id: 1, name: "A. De Silva", email: "depot.admin@srmss.lk", role: "Supervisor", department: "Operations", status: "Active", lastLogin: "2026-10-03 08:15" },
+    { id: 2, name: "K. Bandara", email: "depot.clerk@srmss.lk", role: "Operational Staff", department: "Operations", status: "Active", lastLogin: "2026-10-03 07:45" },
+    { id: 3, name: "M. Perera", email: "m.perera@srmss.lk", role: "Supervisor", department: "Maintenance", status: "Active", lastLogin: "2026-10-02 16:30" },
+    { id: 4, name: "S. Fernando", email: "s.fernando@srmss.lk", role: "Operational Staff", department: "Operations", status: "Inactive", lastLogin: "2026-09-28 14:20" },
+  ]);
+
+  const [depots, setDepots] = useState<AdminDepot[]>([
+    { id: 1, name: "Central Bus Depot", location: "Colombo", manager: "A. De Silva", buses: 12, staff: 8, status: "Active" },
+    { id: 2, name: "Kandy Depot", location: "Kandy", manager: "M. Perera", buses: 8, staff: 5, status: "Active" },
+    { id: 3, name: "Galle Depot", location: "Galle", manager: "R. Silva", buses: 6, staff: 4, status: "Active" },
+    { id: 4, name: "Negombo Depot", location: "Negombo", manager: "T. Kumara", buses: 10, staff: 6, status: "Maintenance" },
+  ]);
+
+  // ── Toast ──
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const showToast = useCallback((msg: string, type: "success" | "error" = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
+
+  // ── Search state ──
+  const [search, setSearch] = useState("");
+
+  // ── Computed data ──
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todaysSchedules = useMemo(() =>
+    schedules.filter((s) => s.date === todayStr).sort((a, b) => a.departureTime.localeCompare(b.departureTime)),
+    [schedules, todayStr]
+  );
+  const activeBuses = useMemo(() => buses.filter((b) => b.status === "Active" || b.status === "In Service"), [buses]);
+  const onDutyDrivers = useMemo(() => drivers.filter((d) => d.status === "On Duty"), [drivers]);
+  const openExceptions = useMemo(() => exceptions.filter((e) => e.status !== "Resolved"), [exceptions]);
+  const unresolvedConflicts = useMemo(() => conflicts.filter((c) => c.status === "Unresolved"), [conflicts]);
+  const dispatchedTrips = useMemo(() => todaysSchedules.filter((s) => s.status === "On Time" || s.status === "Completed"), [todaysSchedules]);
+  const tripsInProgress = useMemo(() => todaysSchedules.filter((s) => s.status === "On Time"), [todaysSchedules]);
+  const delayedTrips = useMemo(() => todaysSchedules.filter((s) => s.status === "Delayed"), [todaysSchedules]);
+  const scheduledTrips = useMemo(() => todaysSchedules.filter((s) => s.status === "Scheduled"), [todaysSchedules]);
+  const completedTrips = useMemo(() => schedules.filter((s) => s.status === "Completed"), [schedules]);
+  const busesUnderMaintenance = useMemo(() => buses.filter((b) => b.status === "Under Maintenance" || b.status === "Out of Service"), [buses]);
+  const fleetUtilizationRate = buses.length ? Math.round((activeBuses.length / buses.length) * 100) : 0;
+  const driverDutyRate = drivers.length ? Math.round((onDutyDrivers.length / drivers.length) * 100) : 0;
+  const dispatchRate = todaysSchedules.length ? Math.round((dispatchedTrips.length / todaysSchedules.length) * 100) : 0;
+  const onTimeRate = dispatchedTrips.length ? Math.round((tripsInProgress.length / dispatchedTrips.length) * 100) : 0;
+
+  // ── Modal state (unified pattern: null = closed, object = open) ──
+  // User modals
+  const [userModal, setUserModal] = useState<{ mode: "add" | "edit" | "view"; data?: AdminUser } | null>(null);
+  const [deleteUser, setDeleteUser] = useState<AdminUser | null>(null);
+  const [userForm, setUserForm] = useState({ name: "", email: "", role: "Supervisor", department: "Operations", status: "Active" as "Active" | "Inactive" });
+
+  // Depot modals
+  const [depotModal, setDepotModal] = useState<{ mode: "add" | "edit" | "view"; data?: AdminDepot } | null>(null);
+  const [deleteDepot, setDeleteDepot] = useState<AdminDepot | null>(null);
+  const [depotForm, setDepotForm] = useState({ name: "", location: "", manager: "", buses: "0", staff: "0", status: "Active" as "Active" | "Maintenance" });
+
+  // Bus modals
+  const [busModal, setBusModal] = useState<{ mode: "add" | "edit" | "view"; data?: BusRecord } | null>(null);
+  const [deleteBus, setDeleteBus] = useState<BusRecord | null>(null);
+  const [busForm, setBusForm] = useState({ busNo: "", registration: "", seatingCapacity: "44", mileage: "0", status: "Active" as BusRecord["status"] });
+
+  // Driver modals
+  const [driverModal, setDriverModal] = useState<{ mode: "add" | "edit" | "view"; data?: DriverRecord } | null>(null);
+  const [deleteDriver, setDeleteDriver] = useState<DriverRecord | null>(null);
+  const [driverForm, setDriverForm] = useState({ name: "", licenseNumber: "", phone: "", assignedRoute: routeData[0]?.name || "", workingHours: "06:00 - 14:00", status: "Available" as DriverRecord["status"] });
+
+  // Route modals
+  const [routeModal, setRouteModal] = useState<{ mode: "add" | "edit" | "view"; data?: ViewedRoute } | null>(null);
+  const [deleteRoute, setDeleteRoute] = useState<DepotRoute | null>(null);
+  const [routeForm, setRouteForm] = useState({ name: "", start: "", end: "", distance: "0", stops: "", serviceType: "Normal" as typeof SERVICE_TYPES[number], status: "Planned" as typeof ROUTE_STATUSES[number] });
+
+  // Schedule modals
+  const [schedModal, setSchedModal] = useState<{ mode: "add" | "edit" | "view"; data?: ScheduleItem } | null>(null);
+  const [deleteSched, setDeleteSched] = useState<ScheduleItem | null>(null);
+  const [schedForm, setSchedForm] = useState({ routeName: routes[0]?.name || "", busNo: buses[0]?.busNo || "", driver: drivers[0]?.name || "", departureTime: "07:00", arrivalTime: "10:00", date: todayStr, serviceType: "Normal" as typeof SERVICE_TYPES[number], status: "Scheduled" as ScheduleItem["status"] });
+
+  // Conflict / Exception modals
+  const [viewConflict, setViewConflict] = useState<ScheduleConflict | null>(null);
+  const [deleteConflictItem, setDeleteConflictItem] = useState<ScheduleConflict | null>(null);
+  const [viewException, setViewException] = useState<OperationalException | null>(null);
+  const [deleteExceptionItem, setDeleteExceptionItem] = useState<OperationalException | null>(null);
+
+  // Maintenance modals
+  const [maintModal, setMaintModal] = useState<{ mode: "add" | "edit" | "view"; data?: typeof maintenanceRecords[number] } | null>(null);
+  const [deleteMaint, setDeleteMaint] = useState<typeof maintenanceRecords[number] | null>(null);
+  const [maintForm, setMaintForm] = useState({ vehicle: buses[0]?.busNo || "", type: "Routine Maintenance" as "Routine Maintenance" | "Corrective Maintenance", date: todayStr, nextServiceDate: "", status: "Scheduled" as "Completed" | "Scheduled" | "Overdue", remarks: "" });
+
+  // Fuel modals
+  const [fuelModal, setFuelModal] = useState<{ mode: "add" | "edit" | "view"; data?: typeof fuelRecords[number] } | null>(null);
+  const [deleteFuelItem, setDeleteFuelItem] = useState<typeof fuelRecords[number] | null>(null);
+  const [fuelForm, setFuelForm] = useState({ busNo: buses[0]?.busNo || "", route: routes[0]?.name || "", fuelLiters: "", cost: "", date: todayStr, remarks: "" });
+
+  // Misc
+  const [viewingLogs, setViewingLogs] = useState(false);
+  const [tripDetailModal, setTripDetailModal] = useState<ScheduleItem | null>(null);
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
+  const [emergencyForm, setEmergencyForm] = useState({ scheduleId: "", reason: "Emergency Road Closure", newDepartureTime: "08:00", newArrivalTime: "10:35", remarks: "" });
+
+  // ── User CRUD ──
+  const openAddUser = () => { setUserForm({ name: "", email: "", role: "Supervisor", department: "Operations", status: "Active" }); setUserModal({ mode: "add" }); };
+  const openEditUser = (u: AdminUser) => { setUserForm({ name: u.name, email: u.email, role: u.role, department: u.department, status: u.status }); setUserModal({ mode: "edit", data: u }); };
+  const saveUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userForm.name.trim() || !userForm.email.trim()) return showToast("Name and email are required", "error");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userForm.email)) return showToast("Enter a valid email address", "error");
+    if (userModal?.mode === "add") {
+      setUsers(prev => [...prev, { id: Math.max(0, ...prev.map(u => u.id)) + 1, ...userForm, lastLogin: "Never" }]);
+      showToast(`User ${userForm.name} added successfully`);
+    } else if (userModal?.data) {
+      setUsers(prev => prev.map(u => u.id === userModal.data!.id ? { ...u, ...userForm } : u));
+      showToast(`User ${userForm.name} updated`);
+    }
+    setUserModal(null);
+  };
+  const confirmDeleteUser = () => {
+    if (!deleteUser) return;
+    setUsers(prev => prev.filter(u => u.id !== deleteUser.id));
+    showToast(`User ${deleteUser.name} removed`);
+    setDeleteUser(null);
+  };
+
+  // ── Depot CRUD ──
+  const openAddDepot = () => { setDepotForm({ name: "", location: "", manager: "", buses: "0", staff: "0", status: "Active" }); setDepotModal({ mode: "add" }); };
+  const openEditDepot = (d: AdminDepot) => { setDepotForm({ name: d.name, location: d.location, manager: d.manager, buses: String(d.buses), staff: String(d.staff), status: d.status }); setDepotModal({ mode: "edit", data: d }); };
+  const saveDepot = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!depotForm.name.trim() || !depotForm.location.trim()) return showToast("Name and location are required", "error");
+    const built = { name: depotForm.name, location: depotForm.location, manager: depotForm.manager, buses: Number(depotForm.buses), staff: Number(depotForm.staff), status: depotForm.status };
+    if (depotModal?.mode === "add") {
+      setDepots(prev => [...prev, { id: Math.max(0, ...prev.map(d => d.id)) + 1, ...built }]);
+      showToast(`Depot ${depotForm.name} added`);
+    } else if (depotModal?.data) {
+      setDepots(prev => prev.map(d => d.id === depotModal.data!.id ? { ...d, ...built } : d));
+      showToast(`Depot ${depotForm.name} updated`);
+    }
+    setDepotModal(null);
+  };
+
+  // ── Bus CRUD ──
+  const openAddBus = () => { setBusForm({ busNo: "", registration: "", seatingCapacity: "44", mileage: "0", status: "Active" }); setBusModal({ mode: "add" }); };
+  const openEditBus = (b: BusRecord) => { setBusForm({ busNo: b.busNo, registration: b.registration, seatingCapacity: String(b.seatingCapacity), mileage: String(b.mileage), status: b.status }); setBusModal({ mode: "edit", data: b }); };
+  const saveBus = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!busForm.busNo.trim() || !busForm.registration.trim()) return showToast("Bus No and Registration are required", "error");
+    const built = { busNo: busForm.busNo, registration: busForm.registration, seatingCapacity: Number(busForm.seatingCapacity), mileage: Number(busForm.mileage), status: busForm.status, maintenanceHistory: [] };
+    if (busModal?.mode === "add") { addBus(built); showToast(`Bus ${busForm.busNo} added`); }
+    else if (busModal?.data) { updateBus(busModal.data.id, { ...busModal.data, ...built }); showToast(`Bus ${busForm.busNo} updated`); }
+    setBusModal(null);
+  };
+
+  // ── Driver CRUD ──
+  const openAddDriver = () => { setDriverForm({ name: "", licenseNumber: "", phone: "", assignedRoute: routes[0]?.name || "", workingHours: "06:00 - 14:00", status: "Available" }); setDriverModal({ mode: "add" }); };
+  const openEditDriver = (d: DriverRecord) => { setDriverForm({ name: d.name, licenseNumber: d.licenseNumber, phone: d.phone, assignedRoute: d.assignedRoute, workingHours: d.workingHours, status: d.status }); setDriverModal({ mode: "edit", data: d }); };
+  const saveDriver = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!driverForm.name.trim() || !driverForm.licenseNumber.trim()) return showToast("Name and license number are required", "error");
+    if (driverModal?.mode === "add") { addDriver({ ...driverForm }); showToast(`Driver ${driverForm.name} added`); }
+    else if (driverModal?.data) { updateDriver(driverModal.data.id, { ...driverModal.data, ...driverForm }); showToast(`Driver ${driverForm.name} updated`); }
+    setDriverModal(null);
+  };
+
+  // ── Route CRUD ──
+  const openAddRoute = () => { setRouteForm({ name: "", start: "", end: "", distance: "0", stops: "", serviceType: "Normal", status: "Planned" }); setRouteModal({ mode: "add" }); };
+  const openEditRoute = (r: DepotRoute) => {
+    setRouteForm({ name: r.name, start: r.start, end: r.end, distance: String(r.distance), stops: r.stops.join(", "), serviceType: r.serviceType, status: r.status });
+    setRouteModal({ mode: "edit", data: { ...r, assignedBusNo: buses.find(b => b.id === r.busId)?.busNo ?? "—", assignedDriverName: drivers.find(d => d.id === r.driverId)?.name ?? "—" } });
+  };
+  const saveRoute = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!routeForm.name.trim() || !routeForm.start.trim() || !routeForm.end.trim()) return showToast("Name, start and end are required", "error");
+    const built = { name: routeForm.name, start: routeForm.start, end: routeForm.end, distance: Number(routeForm.distance), stops: routeForm.stops.split(",").map(s => s.trim()).filter(Boolean), serviceType: routeForm.serviceType, status: routeForm.status, color: "#146CFA", busId: 1, driverId: 1 };
+    if (routeModal?.mode === "add") { addRoute(built); showToast(`Route ${routeForm.name} added`); }
+    else if (routeModal?.data) { updateRoute(routeModal.data.id, { ...routeModal.data, ...built }); showToast(`Route ${routeForm.name} updated`); }
+    setRouteModal(null);
+  };
+
+  // ── Schedule CRUD ──
+  const openAddSched = () => { setSchedForm({ routeName: routes[0]?.name || "", busNo: buses[0]?.busNo || "", driver: drivers[0]?.name || "", departureTime: "07:00", arrivalTime: "10:00", date: todayStr, serviceType: "Normal", status: "Scheduled" }); setSchedModal({ mode: "add" }); };
+  const openEditSched = (s: ScheduleItem) => { setSchedForm({ routeName: s.routeName, busNo: s.busNo, driver: s.driver, departureTime: s.departureTime, arrivalTime: s.arrivalTime, date: s.date, serviceType: s.serviceType, status: s.status }); setSchedModal({ mode: "edit", data: s }); };
+  const saveSched = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!schedForm.routeName || !schedForm.busNo || !schedForm.driver) return showToast("Route, Bus and Driver are required", "error");
+    const built = { routeId: routes.find(r => r.name === schedForm.routeName)?.id || 1, routeName: schedForm.routeName, busNo: schedForm.busNo, driver: schedForm.driver, departureTime: schedForm.departureTime, arrivalTime: schedForm.arrivalTime, date: schedForm.date, serviceType: schedForm.serviceType, status: schedForm.status };
+    if (schedModal?.mode === "add") { addSchedule(built); showToast("Schedule added"); }
+    else if (schedModal?.data) { updateSchedule(schedModal.data.id, { ...schedModal.data, ...built }); showToast("Schedule updated"); }
+    setSchedModal(null);
+  };
+
+  // ── Maintenance CRUD ──
+  const openAddMaint = () => { setMaintForm({ vehicle: buses[0]?.busNo || "", type: "Routine Maintenance", date: todayStr, nextServiceDate: "", status: "Scheduled", remarks: "" }); setMaintModal({ mode: "add" }); };
+  const openEditMaint = (m: typeof maintenanceRecords[number]) => { setMaintForm({ vehicle: m.vehicle, type: m.type, date: m.date, nextServiceDate: m.nextServiceDate, status: m.status, remarks: m.remarks }); setMaintModal({ mode: "edit", data: m }); };
+  const saveMaint = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!maintForm.vehicle || !maintForm.date) return showToast("Vehicle and date are required", "error");
+    const built = { vehicle: maintForm.vehicle, type: maintForm.type, date: maintForm.date, nextServiceDate: maintForm.nextServiceDate || maintForm.date, status: maintForm.status, remarks: maintForm.remarks };
+    if (maintModal?.mode === "add") { addMaintenance(built); showToast("Maintenance record added"); }
+    else if (maintModal?.data) { updateMaintenance(maintModal.data.id, { ...maintModal.data, ...built }); showToast("Maintenance record updated"); }
+    setMaintModal(null);
+  };
+
+  // ── Fuel CRUD ──
+  const openAddFuel = () => { setFuelForm({ busNo: buses[0]?.busNo || "", route: routes[0]?.name || "", fuelLiters: "", cost: "", date: todayStr, remarks: "" }); setFuelModal({ mode: "add" }); };
+  const openEditFuel = (f: typeof fuelRecords[number]) => { setFuelForm({ busNo: f.busNo, route: f.route, fuelLiters: String(f.fuelLiters), cost: String(f.cost), date: f.date, remarks: f.remarks }); setFuelModal({ mode: "edit", data: f }); };
+  const saveFuel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fuelForm.busNo || !fuelForm.fuelLiters) return showToast("Bus and fuel liters are required", "error");
+    const built = { busNo: fuelForm.busNo, route: fuelForm.route, fuelLiters: Number(fuelForm.fuelLiters), cost: Number(fuelForm.cost), date: fuelForm.date, remarks: fuelForm.remarks };
+    if (fuelModal?.mode === "add") { addFuel(built); showToast("Fuel record added"); }
+    else if (fuelModal?.data) { updateFuel(fuelModal.data.id, { ...fuelModal.data, ...built }); showToast("Fuel record updated"); }
+    setFuelModal(null);
+  };
+
+  // ── Conflict / Exception resolution ──
+  const resolveConflict = (c: ScheduleConflict) => { const { id, ...rest } = c; updateConflict(id, { ...rest, status: "Resolved" }); showToast(`Conflict for ${c.route} resolved`); setViewConflict(null); };
+  const resolveException = (ex: OperationalException, note: string) => { const { id, ...rest } = ex; updateException(id, { ...rest, status: "Resolved", resolutionNote: note || "Resolved by admin" }); showToast(`Exception on ${ex.route} resolved`); setViewException(null); };
+
+  // ── Emergency adjustment ──
+  const applyEmergency = (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = schedules.find(s => s.id === Number(emergencyForm.scheduleId));
+    if (!target) return showToast("Schedule not found", "error");
+    const { id, ...rest } = target;
+    updateSchedule(id, { ...rest, departureTime: emergencyForm.newDepartureTime, arrivalTime: emergencyForm.newArrivalTime, status: "Delayed" });
+    addException({ type: "Schedule Disruption", route: target.routeName, entity: `Bus ${target.busNo}`, time: emergencyForm.newDepartureTime, reason: `${emergencyForm.reason} — ${emergencyForm.remarks}`, status: "In Progress" });
+    setEmergencyOpen(false);
+    showToast(`Emergency adjustment applied to ${target.routeName}`);
+  };
+
+  // ── KPI metrics ──
+  const summaryMetrics = [
+    { label: "Scheduled Trips", value: String(todaysSchedules.length), change: "Today's timetable", icon: CalendarDays, accent: "blue" as const },
+    { label: "Dispatched", value: String(dispatchedTrips.length), change: `${dispatchRate}% dispatch rate`, icon: CheckCircle2, accent: "green" as const },
+    { label: "In Progress", value: String(tripsInProgress.length), change: "En route", icon: Route, accent: "blue" as const },
+    { label: "Delayed", value: String(delayedTrips.length), change: delayedTrips.length ? "Requires action" : "All on time", icon: Clock, accent: delayedTrips.length > 0 ? "amber" as const : "green" as const },
+    { label: "Active Fleet", value: String(activeBuses.length), change: `${fleetUtilizationRate}% utilization`, icon: Bus, accent: "green" as const },
+    { label: "On-Duty Drivers", value: String(onDutyDrivers.length), change: `${driverDutyRate}% coverage`, icon: Users, accent: "blue" as const },
+    { label: "Open Exceptions", value: String(openExceptions.length), change: `${unresolvedConflicts.length} conflicts`, icon: AlertTriangle, accent: openExceptions.length > 0 ? "red" as const : "green" as const },
+    { label: "On-Time Rate", value: `${onTimeRate}%`, change: "Punctuality index", icon: Gauge, accent: onTimeRate >= 85 ? "green" as const : onTimeRate >= 65 ? "amber" as const : "red" as const },
+  ];
+
+  const sections = [
+    { id: "overview", label: "Dashboard Overview", icon: LayoutDashboard },
+    { id: "users", label: "User Management", icon: UserCog },
+    { id: "depots", label: "Depot Management", icon: MapPin },
+    { id: "control", label: "Control Board", icon: Activity },
+    { id: "fleet", label: "Vehicle Fleet", icon: Bus },
+    { id: "drivers", label: "Driver Roster", icon: Users },
+    { id: "routes", label: "Route Network", icon: Route },
+    { id: "schedules", label: "Timetable", icon: CalendarDays },
+    { id: "conflicts", label: "Conflict Center", icon: AlertTriangle },
+    { id: "exceptions", label: "Exceptions & Issues", icon: Wrench },
+    { id: "reports", label: "Reports & Analytics", icon: BarChart3 },
+    { id: "settings", label: "System Settings", icon: Settings },
+  ];
+
+  const routePerformanceData = [
+    { name: "Colombo - Kandy", value: 92 }, { name: "Galle - Matara", value: 88 },
+    { name: "Kandy - Matale", value: 84 }, { name: "Negombo - Colombo", value: 90 },
+    { name: "Kurunegala - Puttalam", value: 79 },
+  ];
+
+  // ── Resolution note ref for exception modal ──
+  const [exceptionNote, setExceptionNote] = useState("");
+
+  return (
+    <AppShell title="System Administrator Dashboard" subtitle="Complete system management, user administration, and depot oversight">
+      {/* Toast */}
+      <div className={`fixed bottom-5 right-5 z-[9999] transition-all duration-300 ${toast ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"}`}>
+        <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium shadow-xl ${toast?.type === "error" ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-300" : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-300"}`}>
+          {toast?.type === "error" ? <XCircle className="h-4 w-4 shrink-0" /> : <CheckCircle className="h-4 w-4 shrink-0" />}
+          {toast?.msg}
+        </div>
+      </div>
+
+      {/* ══════════ OVERVIEW ══════════ */}
+      {currentSection === "overview" && (
+        <div className="space-y-6">
+
+          {/* Section Tabs — overview only */}
+          <div className="flex flex-wrap gap-2 border-b border-[var(--border)] pb-4">
+            {sections.map(({ id, label, icon: Icon }) => (
+              <button key={id} type="button" onClick={() => navigateSection(id)}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition sm:text-sm ${
+                  currentSection === id ? "bg-[var(--accent)] text-white shadow-sm" : "border border-[var(--border)] bg-[var(--panel)] text-[var(--text-secondary)] hover:bg-[var(--soft)] hover:text-[var(--text-primary)]"
+                }`}>
+                <Icon className="h-4 w-4" />{label}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Admin Banner ── */}
+          <div className="relative overflow-hidden rounded-3xl border border-[var(--accent)]/30 bg-gradient-to-r from-[var(--sidebar-bg)] via-[#0d2a46] to-[var(--sidebar-bg)] p-6 text-white shadow-xl">
+            {/* decorative rings */}
+            <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full border border-white/5" />
+            <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full border border-white/10" />
+            <div className="relative z-10 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--accent)]">
+                  <ShieldCheck className="h-4 w-4" /> ADMINISTRATOR CONTROL PANEL
+                </div>
+                <h2 className="text-2xl font-bold">Complete System Overview &amp; Management</h2>
+                <p className="text-sm text-slate-300 max-w-xl">Full visibility across routes, fleet, schedules, drivers, conflicts, fuel, maintenance and all depot operations.</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {[`${routes.length} Routes`, `${buses.length} Buses`, `${drivers.length} Drivers`, `${users.length} Users`, `${depots.length} Depots`].map(tag => (
+                    <span key={tag} className="rounded-lg bg-white/10 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">{tag}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button type="button" onClick={openAddUser} className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-violet-700 transition">
+                  <UserCog className="h-4 w-4" /> Add User
+                </button>
+                <button type="button" onClick={() => setViewingLogs(true)} className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/20 transition backdrop-blur-sm">
+                  <History className="h-4 w-4" /> System Logs
+                </button>
+                <button type="button" onClick={() => router.push("/register")} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition">
+                  <Plus className="h-4 w-4" /> Register User
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Live Stats Bar ── */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: "Current Time", value: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }), icon: Clock, color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-500/10" },
+              { label: new Date().toLocaleDateString("en-US", { weekday: "long" }), value: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), icon: CalendarDays, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-500/10" },
+              { label: "Active Depots", value: `${depots.filter(d => d.status === "Active").length} / ${depots.length}`, icon: MapPin, color: "text-amber-500", bg: "bg-amber-50 dark:bg-amber-500/10" },
+              { label: "Registered Users", value: `${users.filter(u => u.status === "Active").length} active of ${users.length}`, icon: UserCog, color: "text-violet-500", bg: "bg-violet-50 dark:bg-violet-500/10" },
+            ].map(({ label, value, icon: Icon, color, bg }) => (
+              <div key={label} className="flex items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3.5">
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${bg}`}>
+                  <Icon className={`h-5 w-5 ${color}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs text-[var(--text-muted)] truncate">{label}</div>
+                  <div className="font-bold text-[var(--text-primary)] truncate">{value}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── KPI Cards (8 metrics) ── */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {summaryMetrics.map(m => <MetricCard key={m.label} {...m} />)}
+          </div>
+
+          {/* ── Row 1: Fleet + Drivers + Routes ── */}
+          <div className="grid gap-5 lg:grid-cols-3">
+            {/* Fleet Utilization */}
+            <SectionCard title="Fleet Status" subtitle={`${buses.length} total vehicles`}>
+              <div className="space-y-3">
+                {[
+                  { label: "Active / In Service", count: activeBuses.length, total: buses.length, color: "bg-emerald-500" },
+                  { label: "Under Maintenance", count: buses.filter(b => b.status === "Under Maintenance").length, total: buses.length, color: "bg-amber-500" },
+                  { label: "Out of Service", count: buses.filter(b => b.status === "Out of Service").length, total: buses.length, color: "bg-rose-500" },
+                ].map(({ label, count, total, color }) => (
+                  <div key={label}>
+                    <div className="flex justify-between text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+                      <span>{label}</span>
+                      <span className="font-bold text-[var(--text-primary)]">{count}</span>
+                    </div>
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-[var(--soft)]">
+                      <div className={`h-full rounded-full ${color} transition-all duration-700`} style={{ width: total ? `${(count / total) * 100}%` : "0%" }} />
+                    </div>
+                  </div>
+                ))}
+                <div className="pt-2 text-center">
+                  <div className="text-3xl font-bold text-[var(--text-primary)]">{fleetUtilizationRate}%</div>
+                  <div className="text-xs text-[var(--text-muted)]">Fleet Utilization Rate</div>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Driver Status */}
+            <SectionCard title="Driver Roster" subtitle={`${drivers.length} total drivers`}>
+              <div className="space-y-3">
+                {[
+                  { label: "On Duty", count: onDutyDrivers.length, color: "bg-blue-500", text: "text-blue-600" },
+                  { label: "Available", count: drivers.filter(d => d.status === "Available").length, color: "bg-emerald-500", text: "text-emerald-600" },
+                  { label: "Off Duty", count: drivers.filter(d => d.status === "Off Duty").length, color: "bg-slate-400", text: "text-slate-500" },
+                ].map(({ label, count, color, text }) => (
+                  <div key={label} className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] px-3 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`h-3 w-3 rounded-full ${color}`} />
+                      <span className="text-sm text-[var(--text-secondary)]">{label}</span>
+                    </div>
+                    <span className={`text-lg font-bold ${text}`}>{count}</span>
+                  </div>
+                ))}
+                <div className="pt-1 text-center">
+                  <div className="text-3xl font-bold text-[var(--text-primary)]">{driverDutyRate}%</div>
+                  <div className="text-xs text-[var(--text-muted)]">Duty Coverage Rate</div>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Route Performance */}
+            <SectionCard title="Route Performance" subtitle="On-time % by corridor">
+              <div className="space-y-2.5">
+                {routePerformanceData.map(r => (
+                  <div key={r.name}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-medium text-[var(--text-secondary)] truncate max-w-[140px]">{r.name}</span>
+                      <span className={`font-bold ${r.value >= 88 ? "text-emerald-600" : r.value >= 80 ? "text-amber-600" : "text-rose-600"}`}>{r.value}%</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--soft)]">
+                      <div className={`h-full rounded-full transition-all duration-700 ${r.value >= 88 ? "bg-emerald-500" : r.value >= 80 ? "bg-amber-500" : "bg-rose-500"}`} style={{ width: `${r.value}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
+
+          {/* ── Row 2: Today's Trips + Alerts + Users Snapshot ── */}
+          <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr_1fr]">
+            {/* Today's Trips */}
+            <SectionCard title="Today's Control Board" subtitle={`${todaysSchedules.length} trips scheduled`}
+              action={<button type="button" onClick={() => navigateSection("control")} className="text-xs font-semibold text-[var(--accent)] hover:underline">Full Board →</button>}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-[var(--soft)] text-[var(--text-muted)]">
+                    <tr>
+                      {["Time", "Route", "Bus", "Status", ""].map(h => <th key={h} className="px-3 py-2.5 font-medium first:pl-4 last:pr-4">{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {todaysSchedules.slice(0, 7).map(trip => (
+                      <tr key={trip.id} className="border-t border-[var(--border)] hover:bg-[var(--soft)] transition">
+                        <td className="px-3 py-2.5 pl-4 font-semibold text-[var(--text-primary)]">{trip.departureTime}</td>
+                        <td className="px-3 py-2.5 text-[var(--text-secondary)] max-w-[130px] truncate">{trip.routeName}</td>
+                        <td className="px-3 py-2.5 text-[var(--text-muted)] text-xs">{trip.busNo}</td>
+                        <td className="px-3 py-2.5"><StatusBadge status={trip.status} /></td>
+                        <td className="px-3 py-2.5 pr-4">
+                          <button type="button" onClick={() => setTripDetailModal(trip)} className="rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--panel)]">
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {todaysSchedules.length === 0 && (
+                      <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">No trips scheduled for today</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </SectionCard>
+
+            {/* Alerts */}
+            <SectionCard title="System Alerts" subtitle="Action required">
+              <div className="space-y-2.5">
+                {unresolvedConflicts.length > 0 && (
+                  <button type="button" onClick={() => navigateSection("conflicts")} className="w-full text-left rounded-xl border border-rose-300 bg-rose-50/60 dark:border-rose-400/30 dark:bg-rose-500/10 p-3 hover:bg-rose-50 transition">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-rose-700 dark:text-rose-300"><AlertTriangle className="h-4 w-4 shrink-0" />{unresolvedConflicts.length} Schedule Conflicts</div>
+                    <p className="text-xs text-rose-600/80 dark:text-rose-400/70 mt-0.5">Click to resolve →</p>
+                  </button>
+                )}
+                {openExceptions.length > 0 && (
+                  <button type="button" onClick={() => navigateSection("exceptions")} className="w-full text-left rounded-xl border border-amber-300 bg-amber-50/60 dark:border-amber-400/30 dark:bg-amber-500/10 p-3 hover:bg-amber-50 transition">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-300"><Wrench className="h-4 w-4 shrink-0" />{openExceptions.length} Open Exceptions</div>
+                    <p className="text-xs text-amber-600/80 mt-0.5">Click to handle →</p>
+                  </button>
+                )}
+                {busesUnderMaintenance.length > 0 && (
+                  <button type="button" onClick={() => navigateSection("fleet")} className="w-full text-left rounded-xl border border-[var(--border)] bg-[var(--soft)] p-3 hover:bg-[var(--panel)] transition">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Bus className="h-4 w-4 shrink-0" />{busesUnderMaintenance.length} Buses in Maintenance</div>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5">View fleet →</p>
+                  </button>
+                )}
+                {users.filter(u => u.status === "Inactive").length > 0 && (
+                  <button type="button" onClick={() => navigateSection("users")} className="w-full text-left rounded-xl border border-[var(--border)] bg-[var(--soft)] p-3 hover:bg-[var(--panel)] transition">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Users className="h-4 w-4 shrink-0" />{users.filter(u => u.status === "Inactive").length} Inactive Users</div>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5">Review users →</p>
+                  </button>
+                )}
+                {unresolvedConflicts.length === 0 && openExceptions.length === 0 && busesUnderMaintenance.length === 0 && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-400/20 dark:bg-emerald-500/10 p-5 text-center">
+                    <CheckCircle className="h-9 w-9 text-emerald-500 mx-auto mb-2" />
+                    <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">All Systems Operational</p>
+                    <p className="text-xs text-emerald-600/70 mt-0.5">No active alerts</p>
+                  </div>
+                )}
+              </div>
+            </SectionCard>
+
+            {/* User + Depot Snapshot */}
+            <SectionCard title="System Snapshot" subtitle="Users &amp; Depots">
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Recent Users</div>
+                  <div className="space-y-2">
+                    {users.slice(0, 3).map(u => (
+                      <div key={u.id} className="flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--soft)] px-3 py-2">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-bold text-white">
+                          {u.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-[var(--text-primary)] truncate">{u.name}</div>
+                          <div className="text-[11px] text-[var(--text-muted)] truncate">{u.role}</div>
+                        </div>
+                        <span className={`ml-auto shrink-0 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${u.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{u.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Depot Overview</div>
+                  <div className="space-y-2">
+                    {depots.slice(0, 3).map(d => (
+                      <div key={d.id} className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-[var(--text-primary)] truncate">{d.name}</div>
+                          <div className="text-[11px] text-[var(--text-muted)]">{d.buses} buses · {d.staff} staff</div>
+                        </div>
+                        <span className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${d.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{d.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </SectionCard>
+          </div>
+
+          {/* ── Row 3: Schedules Summary + Maintenance Alerts + Fuel ── */}
+          <div className="grid gap-5 lg:grid-cols-3">
+            {/* Schedule Status */}
+            <SectionCard title="Schedule Summary" subtitle="All scheduled trips">
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                {[
+                  { label: "Total", value: schedules.length, color: "text-[var(--text-primary)]" },
+                  { label: "Completed", value: completedTrips.length, color: "text-emerald-600" },
+                  { label: "Delayed", value: delayedTrips.length, color: "text-amber-600" },
+                  { label: "Scheduled", value: scheduledTrips.length, color: "text-blue-600" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="rounded-xl border border-[var(--border)] bg-[var(--soft)] p-3 text-center">
+                    <div className={`text-2xl font-bold ${color}`}>{value}</div>
+                    <div className="text-[11px] text-[var(--text-muted)] uppercase tracking-wider">{label}</div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => navigateSection("schedules")} className="w-full rounded-xl border border-[var(--border)] bg-[var(--soft)] py-2.5 text-xs font-semibold text-[var(--accent)] hover:bg-[var(--panel)] transition">
+                Manage Timetable →
+              </button>
+            </SectionCard>
+
+            {/* Maintenance Alerts */}
+            <SectionCard title="Maintenance Status" subtitle={`${maintenance.length} records`}>
+              <div className="space-y-2.5">
+                {[
+                  { label: "Overdue", count: maintenance.filter(m => m.status === "Overdue").length, color: "text-rose-600", bg: "bg-rose-50 dark:bg-rose-500/10", border: "border-rose-200 dark:border-rose-400/20" },
+                  { label: "Scheduled", count: maintenance.filter(m => m.status === "Scheduled").length, color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-500/10", border: "border-amber-200 dark:border-amber-400/20" },
+                  { label: "Completed", count: maintenance.filter(m => m.status === "Completed").length, color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-500/10", border: "border-emerald-200 dark:border-emerald-400/20" },
+                ].map(({ label, count, color, bg, border }) => (
+                  <div key={label} className={`flex items-center justify-between rounded-xl border ${border} ${bg} px-4 py-2.5`}>
+                    <span className="text-sm font-medium text-[var(--text-primary)]">{label}</span>
+                    <span className={`text-xl font-bold ${color}`}>{count}</span>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => navigateSection("reports")} className="mt-3 w-full rounded-xl border border-[var(--border)] bg-[var(--soft)] py-2.5 text-xs font-semibold text-[var(--accent)] hover:bg-[var(--panel)] transition">
+                View Reports →
+              </button>
+            </SectionCard>
+
+            {/* Fuel Records */}
+            <SectionCard title="Fuel Records" subtitle={`${fuel.length} total log entries`}>
+              <div className="space-y-2">
+                {fuel.slice(0, 4).map(f => (
+                  <div key={f.id} className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-[var(--text-primary)] truncate">{f.busNo} — {f.route}</div>
+                      <div className="text-[11px] text-[var(--text-muted)]">{f.date}</div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-sm font-bold text-[var(--accent)]">{f.fuelLiters} L</div>
+                      <div className="text-[11px] text-[var(--text-muted)]">LKR {f.cost.toLocaleString()}</div>
+                    </div>
+                  </div>
+                ))}
+                {fuel.length === 0 && <div className="py-6 text-center text-sm text-[var(--text-muted)]">No fuel records yet</div>}
+              </div>
+            </SectionCard>
+          </div>
+
+          {/* ── Row 4: Recent Exceptions + Conflict Summary ── */}
+          <div className="grid gap-5 lg:grid-cols-2">
+            <SectionCard title="Recent Exceptions" subtitle={`${openExceptions.length} open`}
+              action={<button type="button" onClick={() => navigateSection("exceptions")} className="text-xs font-semibold text-[var(--accent)] hover:underline">View All →</button>}>
+              {openExceptions.length === 0
+                ? <div className="py-6 text-center text-sm text-[var(--text-muted)]">No open exceptions</div>
+                : <div className="space-y-2">{openExceptions.slice(0, 3).map(ex => (
+                    <div key={ex.id} className="rounded-xl border border-amber-200 bg-amber-50/60 dark:border-amber-400/20 dark:bg-amber-500/10 px-3 py-2.5">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-xs font-bold text-amber-800 dark:text-amber-300">{ex.type}</span>
+                        <StatusBadge status={ex.status} />
+                      </div>
+                      <div className="text-xs text-[var(--text-secondary)]">{ex.entity} — {ex.route}</div>
+                    </div>
+                  ))}</div>
+              }
+            </SectionCard>
+
+            <SectionCard title="Conflict Summary" subtitle={`${unresolvedConflicts.length} unresolved`}
+              action={<button type="button" onClick={() => navigateSection("conflicts")} className="text-xs font-semibold text-[var(--accent)] hover:underline">View All →</button>}>
+              {unresolvedConflicts.length === 0
+                ? <div className="py-6 text-center"><CheckCircle className="h-8 w-8 text-emerald-500 mx-auto mb-1" /><div className="text-sm text-[var(--text-muted)]">No active conflicts</div></div>
+                : <div className="space-y-2">{unresolvedConflicts.slice(0, 3).map(c => (
+                    <div key={c.id} className="rounded-xl border border-rose-200 bg-rose-50/60 dark:border-rose-400/20 dark:bg-rose-500/10 px-3 py-2.5">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-xs font-bold text-rose-800 dark:text-rose-300">{c.resource}</span>
+                        <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">{c.severity}</span>
+                      </div>
+                      <div className="text-xs text-[var(--text-secondary)]">{c.route} · {c.time}</div>
+                    </div>
+                  ))}</div>
+              }
+            </SectionCard>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════ USER MANAGEMENT ══════════ */}
+      {currentSection === "users" && (
+        <div className="space-y-6">
+          <PageHeader title="User Management" subtitle="Manage system users, roles and permissions"
+            action={<PrimaryButton onClick={openAddUser}><Plus className="mr-1.5 h-4 w-4" />Add User</PrimaryButton>} />
+          <div className="grid gap-4 sm:grid-cols-4">
+            {[
+              { label: "Total Users", value: users.length, color: "text-[var(--text-primary)]" },
+              { label: "Active", value: users.filter(u => u.status === "Active").length, color: "text-emerald-600" },
+              { label: "Supervisors", value: users.filter(u => u.role === "Supervisor").length, color: "text-blue-600" },
+              { label: "Inactive", value: users.filter(u => u.status === "Inactive").length, color: "text-rose-600" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-5">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">{label}</div>
+                <div className={`text-3xl font-bold ${color}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <SectionCard title="User Directory">
+            <div className="mb-4 max-w-sm"><SearchField value={search} onChange={setSearch} placeholder="Search by name, email, role…" /></div>
+            <TableCard
+              headers={["Name", "Email", "Role", "Department", "Status", "Last Login", "Actions"]}
+              rows={users.filter(u => `${u.name} ${u.email} ${u.role} ${u.department}`.toLowerCase().includes(search.toLowerCase())).map(u => (
+                <>
+                  <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">{u.name}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{u.email}</td>
+                  <td className="px-4 py-3"><StatusBadge status={u.role} /></td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{u.department}</td>
+                  <td className="px-4 py-3"><span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${u.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}>{u.status}</span></td>
+                  <td className="px-4 py-3 text-xs text-[var(--text-muted)]">{u.lastLogin}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => setUserModal({ mode: "view", data: u })} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--panel)]"><Eye className="h-3.5 w-3.5" />View</button>
+                      <button type="button" onClick={() => openEditUser(u)} className="inline-flex items-center gap-1 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)]"><PencilLine className="h-3.5 w-3.5" />Edit</button>
+                      <button type="button" onClick={() => setDeleteUser(u)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100"><Trash2 className="h-3.5 w-3.5" />Del</button>
+                    </div>
+                  </td>
+                </>
+              ))}
+            />
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ══════════ DEPOT MANAGEMENT ══════════ */}
+      {currentSection === "depots" && (
+        <div className="space-y-6">
+          <PageHeader title="Depot Management" subtitle="Manage depot locations and staff"
+            action={<PrimaryButton onClick={openAddDepot}><Plus className="mr-1.5 h-4 w-4" />Add Depot</PrimaryButton>} />
+          <div className="grid gap-4 sm:grid-cols-4">
+            {[
+              { label: "Total Depots", value: depots.length, color: "text-[var(--text-primary)]" },
+              { label: "Active", value: depots.filter(d => d.status === "Active").length, color: "text-emerald-600" },
+              { label: "Total Buses", value: depots.reduce((s, d) => s + d.buses, 0), color: "text-blue-600" },
+              { label: "Total Staff", value: depots.reduce((s, d) => s + d.staff, 0), color: "text-amber-600" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-5">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">{label}</div>
+                <div className={`text-3xl font-bold ${color}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <SectionCard title="Depot Directory">
+            <div className="mb-4 max-w-sm"><SearchField value={search} onChange={setSearch} placeholder="Search depots…" /></div>
+            <TableCard
+              headers={["Depot Name", "Location", "Manager", "Buses", "Staff", "Status", "Actions"]}
+              rows={depots.filter(d => `${d.name} ${d.location} ${d.manager}`.toLowerCase().includes(search.toLowerCase())).map(d => (
+                <>
+                  <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">{d.name}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{d.location}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{d.manager}</td>
+                  <td className="px-4 py-3 font-medium text-[var(--text-primary)]">{d.buses}</td>
+                  <td className="px-4 py-3 font-medium text-[var(--text-primary)]">{d.staff}</td>
+                  <td className="px-4 py-3"><span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${d.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{d.status}</span></td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => setDepotModal({ mode: "view", data: d })} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--panel)]"><Eye className="h-3.5 w-3.5" />View</button>
+                      <button type="button" onClick={() => openEditDepot(d)} className="inline-flex items-center gap-1 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)]"><PencilLine className="h-3.5 w-3.5" />Edit</button>
+                      <button type="button" onClick={() => setDeleteDepot(d)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100"><Trash2 className="h-3.5 w-3.5" />Del</button>
+                    </div>
+                  </td>
+                </>
+              ))}
+            />
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ══════════ CONTROL BOARD ══════════ */}
+      {currentSection === "control" && (
+        <div className="space-y-6">
+          <PageHeader title="Operational Control Board" subtitle="Monitor and manage all active trips"
+            action={<PrimaryButton onClick={() => { setEmergencyForm(f => ({ ...f, scheduleId: String(todaysSchedules[0]?.id || "") })); setEmergencyOpen(true); }}><AlertTriangle className="mr-1.5 h-4 w-4" />Emergency Adjustment</PrimaryButton>} />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: "Scheduled", value: scheduledTrips.length, color: "bg-slate-500" },
+              { label: "On Time", value: tripsInProgress.length, color: "bg-emerald-500" },
+              { label: "Delayed", value: delayedTrips.length, color: "bg-amber-500" },
+              { label: "Completed", value: completedTrips.length, color: "bg-blue-500" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 text-center">
+                <div className={`mx-auto mb-2 h-4 w-4 rounded-full ${color}`} />
+                <div className="text-2xl font-bold text-[var(--text-primary)]">{value}</div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
+              </div>
+            ))}
+          </div>
+          <SectionCard title="Active Trip Operations" subtitle="All today's scheduled trips with live status controls">
+            <TableCard
+              headers={["Departure","Route","Bus","Driver","Type","Status","Action","Details"]}
+              rows={todaysSchedules.map(trip => (
+                <>
+                  <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">{trip.departureTime}<div className="text-xs text-[var(--text-muted)]">Arr: {trip.arrivalTime}</div></td>
+                  <td className="px-4 py-3 text-[var(--text-primary)]">{trip.routeName}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{trip.busNo}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{trip.driver}</td>
+                  <td className="px-4 py-3"><StatusBadge status={trip.serviceType} /></td>
+                  <td className="px-4 py-3">
+                    <select value={trip.status} onChange={e => { const { id, ...rest } = trip; updateSchedule(id, { ...rest, status: e.target.value as ScheduleItem["status"] }); showToast(`Status updated to ${e.target.value}`); }}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" aria-label={`Status for ${trip.routeName}`}>
+                      {TRIP_STATUSES.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    {trip.status === "Scheduled" && <button type="button" onClick={() => { const { id, ...rest } = trip; updateSchedule(id, { ...rest, status: "On Time" }); showToast(`${trip.routeName} dispatched`); }} className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Dispatch</button>}
+                    {trip.status === "Delayed" && <button type="button" onClick={() => { setEmergencyForm(f => ({ ...f, scheduleId: String(trip.id) })); setEmergencyOpen(true); }} className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-700">Mitigate</button>}
+                  </td>
+                  <td className="px-4 py-3"><button type="button" onClick={() => setTripDetailModal(trip)} className="inline-flex items-center rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--panel)]"><Eye className="h-3.5 w-3.5" /></button></td>
+                </>
+              ))}
+            />
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ══════════ VEHICLE FLEET ══════════ */}
+      {currentSection === "fleet" && (
+        <div className="space-y-6">
+          <PageHeader title="Vehicle Fleet Management" subtitle="Full CRUD management of all depot buses"
+            action={<PrimaryButton onClick={openAddBus}><Plus className="mr-1.5 h-4 w-4" />Add Bus</PrimaryButton>} />
+          <div className="grid gap-4 sm:grid-cols-4">
+            {[
+              { label: "Total Fleet", value: buses.length, color: "text-[var(--text-primary)]" },
+              { label: "Active / In Service", value: activeBuses.length, color: "text-emerald-600" },
+              { label: "Under Maintenance", value: buses.filter(b => b.status === "Under Maintenance").length, color: "text-amber-600" },
+              { label: "Out of Service", value: buses.filter(b => b.status === "Out of Service").length, color: "text-rose-600" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-5">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">{label}</div>
+                <div className={`text-3xl font-bold ${color}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <SectionCard title="Fleet Roster">
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <div className="flex-1 min-w-[200px] max-w-sm"><SearchField value={search} onChange={setSearch} placeholder="Search bus, registration…" /></div>
+            </div>
+            <TableCard
+              headers={["Bus No","Registration","Capacity","Mileage","Status","Maintenance Note","Actions"]}
+              rows={buses.filter(b => `${b.busNo} ${b.registration} ${b.status}`.toLowerCase().includes(search.toLowerCase())).map(b => (
+                <>
+                  <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">{b.busNo}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{b.registration}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{b.seatingCapacity} seats</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{b.mileage.toLocaleString()} km</td>
+                  <td className="px-4 py-3"><StatusBadge status={b.status} /></td>
+                  <td className="px-4 py-3 text-xs text-[var(--text-muted)]">{b.maintenanceHistory[0] || "—"}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => setBusModal({ mode: "view", data: b })} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--panel)]"><Eye className="h-3.5 w-3.5" />View</button>
+                      <button type="button" onClick={() => openEditBus(b)} className="inline-flex items-center gap-1 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent)]"><PencilLine className="h-3.5 w-3.5" />Edit</button>
+                      <button type="button" onClick={() => setDeleteBus(b)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600"><Trash2 className="h-3.5 w-3.5" />Del</button>
+                    </div>
+                  </td>
+                </>
+              ))}
+            />
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ══════════ DRIVER ROSTER ══════════ */}
+      {currentSection === "drivers" && (
+        <div className="space-y-6">
+          <PageHeader title="Driver Roster" subtitle="Full CRUD management of all drivers"
+            action={<PrimaryButton onClick={openAddDriver}><Plus className="mr-1.5 h-4 w-4" />Add Driver</PrimaryButton>} />
+          <div className="grid gap-4 sm:grid-cols-4">
+            {[
+              { label: "Total Drivers", value: drivers.length, color: "text-[var(--text-primary)]" },
+              { label: "On Duty", value: onDutyDrivers.length, color: "text-blue-600" },
+              { label: "Available", value: drivers.filter(d => d.status === "Available").length, color: "text-emerald-600" },
+              { label: "Off Duty", value: drivers.filter(d => d.status === "Off Duty").length, color: "text-slate-500" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-5">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">{label}</div>
+                <div className={`text-3xl font-bold ${color}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <SectionCard title="Driver Directory">
+            <div className="mb-4 max-w-sm"><SearchField value={search} onChange={setSearch} placeholder="Search driver, license, route…" /></div>
+            <TableCard
+              headers={["Name","License","Phone","Assigned Route","Shift Hours","Status","Actions"]}
+              rows={drivers.filter(d => `${d.name} ${d.licenseNumber} ${d.assignedRoute} ${d.status}`.toLowerCase().includes(search.toLowerCase())).map(d => (
+                <>
+                  <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">{d.name}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{d.licenseNumber}</td>
+                  <td className="px-4 py-3"><div className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-[var(--text-muted)]" /><span className="text-[var(--text-secondary)]">{d.phone}</span></div></td>
+                  <td className="px-4 py-3 font-medium text-[var(--text-primary)]">{d.assignedRoute}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{d.workingHours}</td>
+                  <td className="px-4 py-3">
+                    <select value={d.status} onChange={e => { updateDriver(d.id, { ...d, status: e.target.value as DriverRecord["status"] }); showToast(`${d.name} status → ${e.target.value}`); }}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" aria-label={`Status for ${d.name}`}>
+                      {DRIVER_STATUSES.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => setDriverModal({ mode: "view", data: d })} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--panel)]"><Eye className="h-3.5 w-3.5" />View</button>
+                      <button type="button" onClick={() => openEditDriver(d)} className="inline-flex items-center gap-1 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent)]"><PencilLine className="h-3.5 w-3.5" />Edit</button>
+                      <button type="button" onClick={() => setDeleteDriver(d)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600"><Trash2 className="h-3.5 w-3.5" />Del</button>
+                    </div>
+                  </td>
+                </>
+              ))}
+            />
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ══════════ ROUTE NETWORK ══════════ */}
+      {currentSection === "routes" && (
+        <div className="space-y-6">
+          <PageHeader title="Route Network" subtitle="Full CRUD management of all service corridors"
+            action={<PrimaryButton onClick={openAddRoute}><Plus className="mr-1.5 h-4 w-4" />Add Route</PrimaryButton>} />
+          <div className="grid gap-4 sm:grid-cols-4">
+            {[
+              { label: "Total Routes", value: routes.length, color: "text-[var(--text-primary)]" },
+              { label: "Active", value: routes.filter(r => r.status === "Active").length, color: "text-emerald-600" },
+              { label: "Total Distance", value: `${routes.reduce((s, r) => s + r.distance, 0)} km`, color: "text-blue-600" },
+              { label: "Delayed", value: routes.filter(r => r.status === "Delayed").length, color: "text-amber-600" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-5">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">{label}</div>
+                <div className={`text-3xl font-bold ${color}`}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <SectionCard title="Route Directory">
+            <div className="mb-4 max-w-sm"><SearchField value={search} onChange={setSearch} placeholder="Search route, start, destination…" /></div>
+            <TableCard
+              headers={["Route Name","Start","End","Distance","Stops","Service","Bus","Driver","Status","Actions"]}
+              rows={routes.filter(r => `${r.name} ${r.start} ${r.end} ${r.status}`.toLowerCase().includes(search.toLowerCase())).map(r => (
+                <>
+                  <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">{r.name}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{r.start}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{r.end}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{r.distance} km</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{r.stops.length}</td>
+                  <td className="px-4 py-3"><StatusBadge status={r.serviceType} /></td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{buses.find(b => b.id === r.busId)?.busNo ?? "—"}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{drivers.find(d => d.id === r.driverId)?.name ?? "—"}</td>
+                  <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => setRouteModal({ mode: "view", data: { ...r, assignedBusNo: buses.find(b => b.id === r.busId)?.busNo ?? "—", assignedDriverName: drivers.find(d => d.id === r.driverId)?.name ?? "—" } })} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--panel)]"><Eye className="h-3.5 w-3.5" />View</button>
+                      <button type="button" onClick={() => openEditRoute(r)} className="inline-flex items-center gap-1 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent)]"><PencilLine className="h-3.5 w-3.5" />Edit</button>
+                      <button type="button" onClick={() => setDeleteRoute(r)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600"><Trash2 className="h-3.5 w-3.5" />Del</button>
+                    </div>
+                  </td>
+                </>
+              ))}
+            />
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ══════════ TIMETABLE ══════════ */}
+      {currentSection === "schedules" && (
+        <div className="space-y-6">
+          <PageHeader title="Timetable Management" subtitle="Full CRUD management of all scheduled trips"
+            action={<PrimaryButton onClick={openAddSched}><Plus className="mr-1.5 h-4 w-4" />Add Schedule</PrimaryButton>} />
+          <SectionCard title="Complete Timetable">
+            <div className="mb-4 max-w-sm"><SearchField value={search} onChange={setSearch} placeholder="Search route, bus, driver, date…" /></div>
+            <TableCard
+              headers={["Date","Departure","Arrival","Route","Bus","Driver","Type","Status","Actions"]}
+              rows={schedules.filter(s => `${s.routeName} ${s.busNo} ${s.driver} ${s.date} ${s.status}`.toLowerCase().includes(search.toLowerCase())).map(s => (
+                <>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{s.date}</td>
+                  <td className="px-4 py-3 font-semibold text-[var(--text-primary)]">{s.departureTime}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{s.arrivalTime}</td>
+                  <td className="px-4 py-3 font-medium text-[var(--text-primary)]">{s.routeName}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{s.busNo}</td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">{s.driver}</td>
+                  <td className="px-4 py-3"><StatusBadge status={s.serviceType} /></td>
+                  <td className="px-4 py-3">
+                    <select value={s.status} onChange={e => { const { id, ...rest } = s; updateSchedule(id, { ...rest, status: e.target.value as ScheduleItem["status"] }); showToast(`Status → ${e.target.value}`); }}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-2 py-1 text-xs font-medium text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" aria-label="Update status">
+                      {TRIP_STATUSES.map(st => <option key={st}>{st}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => setTripDetailModal(s)} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--panel)]"><Eye className="h-3.5 w-3.5" />View</button>
+                      <button type="button" onClick={() => openEditSched(s)} className="inline-flex items-center gap-1 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-medium text-[var(--accent)]"><PencilLine className="h-3.5 w-3.5" />Edit</button>
+                      <button type="button" onClick={() => setDeleteSched(s)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600"><Trash2 className="h-3.5 w-3.5" />Del</button>
+                    </div>
+                  </td>
+                </>
+              ))}
+            />
+          </SectionCard>
+        </div>
+      )}
+
+      {/* ══════════ CONFLICT CENTER ══════════ */}
+      {currentSection === "conflicts" && (
+        <div className="space-y-6">
+          <PageHeader title="Schedule Conflict Center" subtitle="Review and resolve scheduling conflicts" />
+          {conflicts.filter(c => c.status === "Unresolved").length > 0 && (
+            <div>
+              <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-rose-600">Unresolved ({conflicts.filter(c => c.status === "Unresolved").length})</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {conflicts.filter(c => c.status === "Unresolved").map(c => (
+                  <div key={c.id} className="flex flex-col justify-between rounded-2xl border border-rose-300 bg-rose-50/60 p-4 dark:border-rose-400/30 dark:bg-rose-500/10">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-rose-600" /><span className="font-bold text-rose-900 dark:text-rose-200">{c.resource}</span></div>
+                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">{c.severity}</span>
+                    </div>
+                    <p className="text-xs text-[var(--text-secondary)] mb-3">{c.reason}</p>
+                    <div className="flex items-center justify-between border-t border-rose-200 pt-2">
+                      <span className="text-[11px] text-[var(--text-muted)]">{c.route} · {c.time}</span>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setViewConflict(c)} className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--soft)]">Details</button>
+                        <button type="button" onClick={() => resolveConflict(c)} className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Resolve</button>
+                        <button type="button" onClick={() => setDeleteConflictItem(c)} className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700">Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {conflicts.filter(c => c.status === "Resolved").length > 0 && (
+            <div>
+              <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-emerald-600">Resolved ({conflicts.filter(c => c.status === "Resolved").length})</h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                {conflicts.filter(c => c.status === "Resolved").map(c => (
+                  <div key={c.id} className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] p-4">
+                    <div><div className="font-medium text-[var(--text-primary)]">{c.resource}</div><p className="text-xs text-[var(--text-muted)]">{c.route} · {c.time}</p></div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">Resolved</span>
+                      <button type="button" onClick={() => setDeleteConflictItem(c)} className="rounded-lg border border-rose-200 bg-rose-50 p-1.5 text-xs text-rose-600 hover:bg-rose-100"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {conflicts.length === 0 && <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--soft)] py-16 text-center"><p className="text-[var(--text-muted)]">No conflicts recorded.</p></div>}
+        </div>
+      )}
+
+      {/* ══════════ EXCEPTIONS ══════════ */}
+      {currentSection === "exceptions" && (
+        <div className="space-y-6">
+          <PageHeader title="Exceptions &amp; Operational Issues" subtitle="Track and resolve operational exceptions" />
+          {exceptions.filter(e => e.status !== "Resolved").length > 0 && (
+            <div>
+              <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-amber-600">Open ({exceptions.filter(e => e.status !== "Resolved").length})</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {exceptions.filter(e => e.status !== "Resolved").map(ex => (
+                  <div key={ex.id} className="flex flex-col justify-between rounded-2xl border border-amber-300 bg-amber-50/60 p-4 dark:border-amber-400/30 dark:bg-amber-500/10">
+                    <div className="flex items-start justify-between gap-2 mb-2"><div className="flex items-center gap-2"><Wrench className="h-5 w-5 text-amber-600" /><span className="font-bold text-amber-900 dark:text-amber-200">{ex.type}: {ex.entity}</span></div><StatusBadge status={ex.status} /></div>
+                    <p className="text-xs text-[var(--text-secondary)] mb-3">{ex.reason}</p>
+                    <div className="flex items-center justify-between border-t border-amber-200 pt-2">
+                      <span className="text-[11px] text-[var(--text-muted)]">{ex.route} · {ex.time}</span>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => { setExceptionNote(""); setViewException(ex); }} className="rounded-lg border border-[var(--border)] bg-[var(--panel)] px-3 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--soft)]">Handle</button>
+                        <button type="button" onClick={() => setDeleteExceptionItem(ex)} className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700">Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {exceptions.filter(e => e.status === "Resolved").length > 0 && (
+            <div>
+              <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-emerald-600">Resolved ({exceptions.filter(e => e.status === "Resolved").length})</h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                {exceptions.filter(e => e.status === "Resolved").map(ex => (
+                  <div key={ex.id} className="flex items-start justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] p-4">
+                    <div><div className="font-medium text-[var(--text-primary)]">{ex.type}: {ex.entity}</div><p className="text-xs text-[var(--text-muted)]">{ex.route} · {ex.time}</p>{ex.resolutionNote && <p className="text-xs text-emerald-600 mt-1">{ex.resolutionNote}</p>}</div>
+                    <div className="flex items-center gap-2 ml-3">
+                      <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 whitespace-nowrap">Resolved</span>
+                      <button type="button" onClick={() => setDeleteExceptionItem(ex)} className="rounded-lg border border-rose-200 bg-rose-50 p-1.5 text-xs text-rose-600 hover:bg-rose-100"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════ REPORTS ══════════ */}
+      {currentSection === "reports" && (
+        <div className="space-y-6">
+          <PageHeader title="Reports &amp; Analytics" subtitle="View performance metrics and export reports"
+            action={<PrimaryButton onClick={() => window.print()}><Download className="mr-1.5 h-4 w-4" />Export PDF</PrimaryButton>} />
+          <div className="grid gap-4 sm:grid-cols-4">
+            {[
+              { label: "Total Routes", value: `${routes.length}`, sub: "Service corridors" },
+              { label: "Network Distance", value: `${routes.reduce((s, r) => s + r.distance, 0)} km`, sub: "Total coverage" },
+              { label: "On-Time Rate", value: `${onTimeRate}%`, sub: "Trip punctuality" },
+              { label: "System Uptime", value: "99.8%", sub: "Last 30 days" },
+            ].map(({ label, value, sub }) => (
+              <div key={label} className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-5">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">{label}</div>
+                <div className="text-2xl font-bold text-[var(--text-primary)]">{value}</div>
+                <div className="text-xs text-[var(--text-secondary)] mt-0.5">{sub}</div>
+              </div>
+            ))}
+          </div>
+          <SectionCard title="Route Performance" subtitle="On-time completion rate by corridor">
+            <div className="space-y-3">
+              {routePerformanceData.map(r => (
+                <div key={r.name} className="flex items-center gap-4">
+                  <div className="w-44 text-sm font-medium text-[var(--text-primary)]">{r.name}</div>
+                  <div className="flex-1"><div className="h-5 w-full overflow-hidden rounded-full bg-[var(--soft)] border border-[var(--border)]"><div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all" style={{ width: `${r.value}%` }} /></div></div>
+                  <div className="w-12 text-right font-bold text-[var(--text-primary)]">{r.value}%</div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+          <div className="grid gap-6 xl:grid-cols-2">
+            <SectionCard title="Export Data" subtitle="Download reports in various formats">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  { label: "Fleet Report", detail: "PDF export of all fleet data", action: "Fleet report exported" },
+                  { label: "Schedule Report", detail: "CSV export of timetables", action: "Schedule report exported" },
+                  { label: "Driver Report", detail: "Excel of driver roster", action: "Driver report exported" },
+                  { label: "Maintenance Report", detail: "PDF of service logs", action: "Maintenance report exported" },
+                ].map(({ label, detail, action }) => (
+                  <button key={label} type="button" onClick={() => showToast(action)} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--soft)] p-4 text-left transition hover:bg-[var(--panel)]">
+                    <FileText className="h-5 w-5 text-[var(--accent)] shrink-0" />
+                    <div><div className="text-sm font-semibold text-[var(--text-primary)]">{label}</div><div className="text-xs text-[var(--text-muted)]">{detail}</div></div>
+                  </button>
+                ))}
+              </div>
+            </SectionCard>
+            <SectionCard title="Fleet Status Distribution">
+              <div className="space-y-3">
+                {[
+                  { label: "Active / In Service", value: activeBuses.length, total: buses.length, color: "bg-emerald-500" },
+                  { label: "Under Maintenance", value: buses.filter(b => b.status === "Under Maintenance").length, total: buses.length, color: "bg-amber-500" },
+                  { label: "Out of Service", value: buses.filter(b => b.status === "Out of Service").length, total: buses.length, color: "bg-rose-500" },
+                ].map(({ label, value, total, color }) => (
+                  <div key={label} className="flex items-center gap-3">
+                    <div className={`h-3 w-3 rounded-full ${color} shrink-0`} />
+                    <div className="flex-1 text-sm text-[var(--text-secondary)]">{label}</div>
+                    <div className="w-full max-w-[120px]"><div className="h-3 w-full overflow-hidden rounded-full bg-[var(--soft)] border border-[var(--border)]"><div className={`h-full rounded-full ${color}`} style={{ width: total ? `${(value / total) * 100}%` : "0%" }} /></div></div>
+                    <div className="w-6 text-right font-bold text-sm text-[var(--text-primary)]">{value}</div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════ SYSTEM SETTINGS ══════════ */}
+      {currentSection === "settings" && (
+        <div className="space-y-6">
+          <PageHeader title="System Settings &amp; Administration" subtitle="Access admin tools, register new users, and manage security" />
+
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {/* Register New User */}
+            <button type="button" onClick={() => router.push("/register")}
+              className="group flex flex-col gap-4 rounded-2xl border-2 border-dashed border-[var(--accent)]/40 bg-[var(--accent-soft)] p-6 text-left transition hover:border-[var(--accent)] hover:bg-[var(--accent)]/10">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent)] text-white shadow-sm group-hover:scale-105 transition">
+                <UserCog className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="text-base font-bold text-[var(--text-primary)]">Register New User</div>
+                <div className="text-sm text-[var(--text-muted)] mt-1">Create a new staff account — supervisor, clerk or admin</div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-3 py-1.5 text-xs font-bold text-white w-fit">
+                Open Register Page →
+              </span>
+            </button>
+
+            {/* View Profile */}
+            <button type="button" onClick={() => router.push("/profile")}
+              className="group flex flex-col gap-4 rounded-2xl border-2 border-dashed border-violet-400/40 bg-violet-50/60 dark:bg-violet-500/10 p-6 text-left transition hover:border-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/20">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-sm group-hover:scale-105 transition">
+                <Users className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="text-base font-bold text-[var(--text-primary)]">My Profile</div>
+                <div className="text-sm text-[var(--text-muted)] mt-1">View and update your admin profile details</div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-3 py-1.5 text-xs font-bold text-white w-fit">
+                Open Profile →
+              </span>
+            </button>
+
+            {/* System Logs */}
+            <button type="button" onClick={() => setViewingLogs(true)}
+              className="group flex flex-col gap-4 rounded-2xl border-2 border-dashed border-slate-400/40 bg-[var(--soft)] p-6 text-left transition hover:border-slate-500 hover:bg-[var(--panel)]">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-700 text-white shadow-sm group-hover:scale-105 transition">
+                <History className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="text-base font-bold text-[var(--text-primary)]">System Logs</div>
+                <div className="text-sm text-[var(--text-muted)] mt-1">Review recent activity, logins and system events</div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 rounded-xl bg-slate-700 px-3 py-1.5 text-xs font-bold text-white w-fit">
+                View Logs →
+              </span>
+            </button>
+          </div>
+
+          {/* System Info */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            <SectionCard title="General Settings">
+              <div className="space-y-3">
+                {[
+                  { label: "System Name", value: "Smart Route Management and Scheduling System" },
+                  { label: "Version", value: "v1.0.0 (Production)" },
+                  { label: "Timezone", value: "Asia/Colombo (UTC+5:30)" },
+                  { label: "Data Retention", value: "90 days" },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] px-4 py-3">
+                    <span className="text-sm font-medium text-[var(--text-primary)]">{label}</span>
+                    <span className="text-sm text-[var(--text-secondary)]">{value}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] px-4 py-3">
+                  <span className="text-sm font-medium text-[var(--text-primary)]">Maintenance Mode</span>
+                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">Disabled</span>
+                </div>
+              </div>
+            </SectionCard>
+            <SectionCard title="Security Settings">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] px-4 py-3"><span className="text-sm font-medium text-[var(--text-primary)]">Two-Factor Authentication</span><span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">Optional</span></div>
+                <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] px-4 py-3"><span className="text-sm font-medium text-[var(--text-primary)]">Data Encryption</span><span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">AES-256 Enabled</span></div>
+                {[
+                  { label: "Session Timeout", value: "24 hours" },
+                  { label: "Password Policy", value: "Min 8 chars, mixed case" },
+                  { label: "Max Login Attempts", value: "5 attempts" },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--soft)] px-4 py-3">
+                    <span className="text-sm font-medium text-[var(--text-primary)]">{label}</span>
+                    <span className="text-sm text-[var(--text-secondary)]">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════
+          ALL MODALS
+      ══════════════════════════════════════ */}
+
+      {/* System Logs */}
+      <Modal open={viewingLogs} title="System Activity Logs" onClose={() => setViewingLogs(false)}>
+        <div className="space-y-2 max-h-80 overflow-y-auto">
+          {[
+            { time: "2026-10-03 08:15:22", msg: "Admin login from 192.168.1.45" },
+            { time: "2026-10-03 08:12:05", msg: "User K. Bandara logged in" },
+            { time: "2026-10-03 07:45:18", msg: "Schedule updated: Colombo - Kandy (NP-2201)" },
+            { time: "2026-10-03 07:30:00", msg: "System backup completed successfully" },
+            { time: "2026-10-03 07:15:42", msg: "Maintenance alert generated: GL-1188" },
+            { time: "2026-10-03 06:50:10", msg: "Bus NP-2201 dispatched on Colombo - Kandy" },
+            { time: "2026-10-03 06:45:00", msg: "Daily timetable loaded: 7 trips scheduled" },
+          ].map(({ time, msg }) => (
+            <div key={time} className="rounded-xl border border-[var(--border)] bg-[var(--soft)] p-3">
+              <div className="text-xs text-[var(--text-muted)]">{time}</div>
+              <div className="text-sm text-[var(--text-primary)]">{msg}</div>
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      {/* Trip Detail */}
+      <Modal open={!!tripDetailModal} title="Trip Details" onClose={() => setTripDetailModal(null)}>
+        {tripDetailModal && (
+          <div className="space-y-4 text-sm">
+            <div className="flex items-center justify-between rounded-xl bg-[var(--soft)] p-3">
+              <div><div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Route</div><div className="text-lg font-bold text-[var(--text-primary)]">{tripDetailModal.routeName}</div></div>
+              <StatusBadge status={tripDetailModal.status} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[["Departure", tripDetailModal.departureTime], ["Arrival", tripDetailModal.arrivalTime], ["Bus", tripDetailModal.busNo], ["Driver", tripDetailModal.driver], ["Date", tripDetailModal.date], ["Service Type", tripDetailModal.serviceType]].map(([k, v]) => (
+                <div key={k} className="rounded-xl border border-[var(--border)] p-3"><div className="text-xs text-[var(--text-muted)]">{k}</div><div className="font-semibold text-[var(--text-primary)]">{v}</div></div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Emergency Adjustment */}
+      <Modal open={emergencyOpen} title="Emergency Schedule Adjustment" onClose={() => setEmergencyOpen(false)}>
+        <form onSubmit={applyEmergency} className="space-y-4">
+          <InputRow label="Schedule">
+            <select value={emergencyForm.scheduleId} onChange={e => setEmergencyForm(f => ({ ...f, scheduleId: e.target.value }))} className={inputCls}>
+              {schedules.map(s => <option key={s.id} value={s.id}>{s.routeName} — {s.departureTime} ({s.date})</option>)}
+            </select>
+          </InputRow>
+          <InputRow label="Reason"><input value={emergencyForm.reason} onChange={e => setEmergencyForm(f => ({ ...f, reason: e.target.value }))} className={inputCls} /></InputRow>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <InputRow label="New Departure"><input type="time" value={emergencyForm.newDepartureTime} onChange={e => setEmergencyForm(f => ({ ...f, newDepartureTime: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="New Arrival"><input type="time" value={emergencyForm.newArrivalTime} onChange={e => setEmergencyForm(f => ({ ...f, newArrivalTime: e.target.value }))} className={inputCls} /></InputRow>
+          </div>
+          <InputRow label="Remarks" required={false}><input value={emergencyForm.remarks} onChange={e => setEmergencyForm(f => ({ ...f, remarks: e.target.value }))} className={inputCls} /></InputRow>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setEmergencyOpen(false)} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Cancel</button>
+            <button type="submit" className="rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700">Apply Adjustment</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ── User modals ── */}
+      <Modal open={userModal?.mode === "view"} title="User Details" onClose={() => setUserModal(null)}>
+        {userModal?.data && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl bg-[var(--soft)] p-3">
+              <div><div className="text-xs text-[var(--text-muted)] uppercase tracking-wider">User</div><div className="text-xl font-bold text-[var(--text-primary)]">{userModal.data.name}</div></div>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${userModal.data.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}>{userModal.data.status}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {([["Email", userModal.data.email], ["Role", userModal.data.role], ["Department", userModal.data.department], ["Last Login", userModal.data.lastLogin]] as [string,string][]).map(([k, v]) => (
+                <div key={k} className="rounded-xl border border-[var(--border)] p-3"><div className="text-xs text-[var(--text-muted)]">{k}</div><div className="font-semibold text-[var(--text-primary)] break-all">{v}</div></div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3"><button type="button" onClick={() => { if (userModal?.data) openEditUser(userModal.data); }} className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2 text-sm font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)]">Edit</button><button type="button" onClick={() => setUserModal(null)} className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">Close</button></div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={userModal?.mode === "add" || userModal?.mode === "edit"} title={userModal?.mode === "add" ? "Add New User" : "Edit User"} onClose={() => setUserModal(null)}>
+        <form onSubmit={saveUser} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InputRow label="Full Name"><input required value={userForm.name} onChange={e => setUserForm(f => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="Full name" /></InputRow>
+            <InputRow label="Email Address"><input required type="email" value={userForm.email} onChange={e => setUserForm(f => ({ ...f, email: e.target.value }))} className={inputCls} placeholder="user@srmss.lk" /></InputRow>
+            <InputRow label="Role"><select value={userForm.role} onChange={e => setUserForm(f => ({ ...f, role: e.target.value }))} className={inputCls}>{ROLES.map(r => <option key={r}>{r}</option>)}</select></InputRow>
+            <InputRow label="Department"><select value={userForm.department} onChange={e => setUserForm(f => ({ ...f, department: e.target.value }))} className={inputCls}>{DEPARTMENTS.map(d => <option key={d}>{d}</option>)}</select></InputRow>
+            <InputRow label="Status"><select value={userForm.status} onChange={e => setUserForm(f => ({ ...f, status: e.target.value as "Active" | "Inactive" }))} className={inputCls}><option>Active</option><option>Inactive</option></select></InputRow>
+          </div>
+          <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setUserModal(null)} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Cancel</button><button type="submit" className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--accent-dark)]">{userModal?.mode === "add" ? "Add User" : "Save Changes"}</button></div>
+        </form>
+      </Modal>
+      <ConfirmDeleteModal open={!!deleteUser} name={deleteUser?.name ?? ""} onConfirm={confirmDeleteUser} onClose={() => setDeleteUser(null)} />
+
+      {/* ── Depot modals ── */}
+      <Modal open={depotModal?.mode === "view"} title="Depot Details" onClose={() => setDepotModal(null)}>
+        {depotModal?.data && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl bg-[var(--soft)] p-3">
+              <div><div className="text-xs text-[var(--text-muted)] uppercase">Depot</div><div className="text-xl font-bold text-[var(--text-primary)]">{depotModal.data.name}</div></div>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${depotModal.data.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{depotModal.data.status}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {([["Location", depotModal.data.location], ["Manager", depotModal.data.manager], ["Assigned Buses", `${depotModal.data.buses} vehicles`], ["Staff Count", `${depotModal.data.staff} personnel`]] as [string,string][]).map(([k, v]) => (
+                <div key={k} className="rounded-xl border border-[var(--border)] p-3"><div className="text-xs text-[var(--text-muted)]">{k}</div><div className="font-semibold text-[var(--text-primary)]">{v}</div></div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3"><button type="button" onClick={() => { if (depotModal?.data) openEditDepot(depotModal.data); }} className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2 text-sm font-medium text-[var(--accent)]">Edit</button><button type="button" onClick={() => setDepotModal(null)} className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">Close</button></div>
+          </div>
+        )}
+      </Modal>
+      <Modal open={depotModal?.mode === "add" || depotModal?.mode === "edit"} title={depotModal?.mode === "add" ? "Add Depot" : "Edit Depot"} onClose={() => setDepotModal(null)}>
+        <form onSubmit={saveDepot} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InputRow label="Depot Name"><input required value={depotForm.name} onChange={e => setDepotForm(f => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. Colombo Central Depot" /></InputRow>
+            <InputRow label="Location"><input required value={depotForm.location} onChange={e => setDepotForm(f => ({ ...f, location: e.target.value }))} className={inputCls} placeholder="City" /></InputRow>
+            <InputRow label="Manager Name"><input value={depotForm.manager} onChange={e => setDepotForm(f => ({ ...f, manager: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Status"><select value={depotForm.status} onChange={e => setDepotForm(f => ({ ...f, status: e.target.value as "Active" | "Maintenance" }))} className={inputCls}>{DEPOT_STATUSES.map(s => <option key={s}>{s}</option>)}</select></InputRow>
+            <InputRow label="Buses Assigned"><input type="number" min="0" value={depotForm.buses} onChange={e => setDepotForm(f => ({ ...f, buses: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Staff Count"><input type="number" min="0" value={depotForm.staff} onChange={e => setDepotForm(f => ({ ...f, staff: e.target.value }))} className={inputCls} /></InputRow>
+          </div>
+          <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setDepotModal(null)} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Cancel</button><button type="submit" className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--accent-dark)]">{depotModal?.mode === "add" ? "Add Depot" : "Save Changes"}</button></div>
+        </form>
+      </Modal>
+      <ConfirmDeleteModal open={!!deleteDepot} name={deleteDepot?.name ?? ""} onConfirm={() => { if (!deleteDepot) return; setDepots(p => p.filter(d => d.id !== deleteDepot.id)); showToast(`Depot ${deleteDepot.name} removed`); setDeleteDepot(null); }} onClose={() => setDeleteDepot(null)} />
+
+      {/* ── Bus modals ── */}
+      <Modal open={busModal?.mode === "view"} title="Bus Details" onClose={() => setBusModal(null)}>
+        {busModal?.data && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl bg-[var(--soft)] p-3"><div><div className="text-xs text-[var(--text-muted)] uppercase">Fleet No</div><div className="text-xl font-bold text-[var(--text-primary)]">{busModal.data.busNo}</div></div><StatusBadge status={busModal.data.status} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              {([["Registration", busModal.data.registration], ["Seating Capacity", `${busModal.data.seatingCapacity} seats`], ["Mileage", `${busModal.data.mileage.toLocaleString()} km`], ["Status", busModal.data.status]] as [string,string][]).map(([k, v]) => (
+                <div key={k} className="rounded-xl border border-[var(--border)] p-3"><div className="text-xs text-[var(--text-muted)]">{k}</div><div className="font-semibold text-[var(--text-primary)]">{v}</div></div>
+              ))}
+            </div>
+            {busModal.data.maintenanceHistory.length > 0 && <div className="rounded-xl border border-[var(--border)] p-3"><div className="text-xs text-[var(--text-muted)] mb-2">Maintenance History</div>{busModal.data.maintenanceHistory.map((h, i) => <div key={i} className="text-xs text-[var(--text-secondary)]">• {h}</div>)}</div>}
+            <div className="flex justify-end gap-3"><button type="button" onClick={() => { if (busModal?.data) openEditBus(busModal.data); }} className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2 text-sm font-medium text-[var(--accent)]">Edit</button><button type="button" onClick={() => setBusModal(null)} className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">Close</button></div>
+          </div>
+        )}
+      </Modal>
+      <Modal open={busModal?.mode === "add" || busModal?.mode === "edit"} title={busModal?.mode === "add" ? "Add Bus" : "Edit Bus"} onClose={() => setBusModal(null)}>
+        <form onSubmit={saveBus} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InputRow label="Fleet / Bus No"><input required value={busForm.busNo} onChange={e => setBusForm(f => ({ ...f, busNo: e.target.value }))} className={inputCls} placeholder="e.g. NP-2201" /></InputRow>
+            <InputRow label="Registration No."><input required value={busForm.registration} onChange={e => setBusForm(f => ({ ...f, registration: e.target.value }))} className={inputCls} placeholder="e.g. CAB-1456" /></InputRow>
+            <InputRow label="Seating Capacity"><input type="number" min="1" value={busForm.seatingCapacity} onChange={e => setBusForm(f => ({ ...f, seatingCapacity: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Mileage (km)"><input type="number" min="0" value={busForm.mileage} onChange={e => setBusForm(f => ({ ...f, mileage: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Status"><select value={busForm.status} onChange={e => setBusForm(f => ({ ...f, status: e.target.value as BusRecord["status"] }))} className={inputCls}>{BUS_STATUSES.map(s => <option key={s}>{s}</option>)}</select></InputRow>
+          </div>
+          <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setBusModal(null)} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Cancel</button><button type="submit" className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--accent-dark)]">{busModal?.mode === "add" ? "Add Bus" : "Save Changes"}</button></div>
+        </form>
+      </Modal>
+      <ConfirmDeleteModal open={!!deleteBus} name={deleteBus?.busNo ?? ""} onConfirm={() => { if (!deleteBus) return; removeBus(deleteBus.id); showToast(`Bus ${deleteBus.busNo} removed`); setDeleteBus(null); }} onClose={() => setDeleteBus(null)} />
+
+      {/* ── Driver modals ── */}
+      <Modal open={driverModal?.mode === "view"} title="Driver Profile" onClose={() => setDriverModal(null)}>
+        {driverModal?.data && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl bg-[var(--soft)] p-3"><div><div className="text-xs text-[var(--text-muted)] uppercase">Driver</div><div className="text-xl font-bold text-[var(--text-primary)]">{driverModal.data.name}</div></div><StatusBadge status={driverModal.data.status} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              {([["License No.", driverModal.data.licenseNumber], ["Phone", driverModal.data.phone], ["Assigned Route", driverModal.data.assignedRoute], ["Working Hours", driverModal.data.workingHours]] as [string,string][]).map(([k, v]) => (
+                <div key={k} className="rounded-xl border border-[var(--border)] p-3"><div className="text-xs text-[var(--text-muted)]">{k}</div><div className="font-semibold text-[var(--text-primary)]">{v}</div></div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3"><button type="button" onClick={() => { if (driverModal?.data) openEditDriver(driverModal.data); }} className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2 text-sm font-medium text-[var(--accent)]">Edit</button><button type="button" onClick={() => setDriverModal(null)} className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">Close</button></div>
+          </div>
+        )}
+      </Modal>
+      <Modal open={driverModal?.mode === "add" || driverModal?.mode === "edit"} title={driverModal?.mode === "add" ? "Add Driver" : "Edit Driver"} onClose={() => setDriverModal(null)}>
+        <form onSubmit={saveDriver} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InputRow label="Full Name"><input required value={driverForm.name} onChange={e => setDriverForm(f => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. S. Perera" /></InputRow>
+            <InputRow label="License Number"><input required value={driverForm.licenseNumber} onChange={e => setDriverForm(f => ({ ...f, licenseNumber: e.target.value }))} className={inputCls} placeholder="e.g. B-1598" /></InputRow>
+            <InputRow label="Phone"><input type="tel" value={driverForm.phone} onChange={e => setDriverForm(f => ({ ...f, phone: e.target.value }))} className={inputCls} placeholder="077-xxx-xxxx" /></InputRow>
+            <InputRow label="Assigned Route"><select value={driverForm.assignedRoute} onChange={e => setDriverForm(f => ({ ...f, assignedRoute: e.target.value }))} className={inputCls}>{routes.map(r => <option key={r.id}>{r.name}</option>)}</select></InputRow>
+            <InputRow label="Working Hours"><input value={driverForm.workingHours} onChange={e => setDriverForm(f => ({ ...f, workingHours: e.target.value }))} className={inputCls} placeholder="06:00 - 14:00" /></InputRow>
+            <InputRow label="Status"><select value={driverForm.status} onChange={e => setDriverForm(f => ({ ...f, status: e.target.value as DriverRecord["status"] }))} className={inputCls}>{DRIVER_STATUSES.map(s => <option key={s}>{s}</option>)}</select></InputRow>
+          </div>
+          <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setDriverModal(null)} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Cancel</button><button type="submit" className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--accent-dark)]">{driverModal?.mode === "add" ? "Add Driver" : "Save Changes"}</button></div>
+        </form>
+      </Modal>
+      <ConfirmDeleteModal open={!!deleteDriver} name={deleteDriver?.name ?? ""} onConfirm={() => { if (!deleteDriver) return; removeDriver(deleteDriver.id); showToast(`Driver ${deleteDriver.name} removed`); setDeleteDriver(null); }} onClose={() => setDeleteDriver(null)} />
+
+      {/* ── Route modals ── */}
+      <Modal open={routeModal?.mode === "view"} title="Route Details" onClose={() => setRouteModal(null)}>
+        {routeModal?.data && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl bg-[var(--soft)] p-3"><div><div className="text-xs text-[var(--text-muted)] uppercase">Route</div><div className="text-xl font-bold text-[var(--text-primary)]">{routeModal.data.name}</div></div><StatusBadge status={routeModal.data.status} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              {([["Start Point", routeModal.data.start], ["Destination", routeModal.data.end], ["Distance", `${routeModal.data.distance} km`], ["Service Type", routeModal.data.serviceType], ["Assigned Bus", routeModal.data.assignedBusNo], ["Assigned Driver", routeModal.data.assignedDriverName]] as [string,string][]).map(([k, v]) => (
+                <div key={k} className="rounded-xl border border-[var(--border)] p-3"><div className="text-xs text-[var(--text-muted)]">{k}</div><div className="font-semibold text-[var(--text-primary)]">{v}</div></div>
+              ))}
+            </div>
+            {routeModal.data.stops.length > 0 && <div className="rounded-xl border border-[var(--border)] p-3"><div className="text-xs text-[var(--text-muted)] mb-2">Intermediate Stops ({routeModal.data.stops.length})</div><div className="flex flex-wrap gap-2">{routeModal.data.stops.map(s => <span key={s} className="rounded-full bg-[var(--soft)] px-2.5 py-1 text-xs font-medium text-[var(--text-primary)]">{s}</span>)}</div></div>}
+            <div className="flex justify-end gap-3"><button type="button" onClick={() => { if (routeModal?.data) openEditRoute(routeModal.data); }} className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-2 text-sm font-medium text-[var(--accent)]">Edit</button><button type="button" onClick={() => setRouteModal(null)} className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white">Close</button></div>
+          </div>
+        )}
+      </Modal>
+      <Modal open={routeModal?.mode === "add" || routeModal?.mode === "edit"} title={routeModal?.mode === "add" ? "Add Route" : "Edit Route"} onClose={() => setRouteModal(null)}>
+        <form onSubmit={saveRoute} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InputRow label="Route Name"><input required value={routeForm.name} onChange={e => setRouteForm(f => ({ ...f, name: e.target.value }))} className={inputCls} placeholder="e.g. Colombo - Kandy" /></InputRow>
+            <InputRow label="Distance (km)"><input type="number" min="0" value={routeForm.distance} onChange={e => setRouteForm(f => ({ ...f, distance: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Start Point"><input required value={routeForm.start} onChange={e => setRouteForm(f => ({ ...f, start: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Destination"><input required value={routeForm.end} onChange={e => setRouteForm(f => ({ ...f, end: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Service Type"><select value={routeForm.serviceType} onChange={e => setRouteForm(f => ({ ...f, serviceType: e.target.value as typeof SERVICE_TYPES[number] }))} className={inputCls}>{SERVICE_TYPES.map(s => <option key={s}>{s}</option>)}</select></InputRow>
+            <InputRow label="Status"><select value={routeForm.status} onChange={e => setRouteForm(f => ({ ...f, status: e.target.value as typeof ROUTE_STATUSES[number] }))} className={inputCls}>{ROUTE_STATUSES.map(s => <option key={s}>{s}</option>)}</select></InputRow>
+          </div>
+          <InputRow label="Intermediate Stops" required={false}><input value={routeForm.stops} onChange={e => setRouteForm(f => ({ ...f, stops: e.target.value }))} className={inputCls} placeholder="Comma-separated: Kelaniya, Kurunegala" /></InputRow>
+          <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setRouteModal(null)} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Cancel</button><button type="submit" className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--accent-dark)]">{routeModal?.mode === "add" ? "Add Route" : "Save Changes"}</button></div>
+        </form>
+      </Modal>
+      <ConfirmDeleteModal open={!!deleteRoute} name={deleteRoute?.name ?? ""} onConfirm={() => { if (!deleteRoute) return; removeRoute(deleteRoute.id); showToast(`Route ${deleteRoute.name} removed`); setDeleteRoute(null); }} onClose={() => setDeleteRoute(null)} />
+
+      {/* ── Schedule modals ── */}
+      <Modal open={schedModal?.mode === "add" || schedModal?.mode === "edit"} title={schedModal?.mode === "add" ? "Add Schedule" : "Edit Schedule"} onClose={() => setSchedModal(null)}>
+        <form onSubmit={saveSched} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InputRow label="Route"><select value={schedForm.routeName} onChange={e => setSchedForm(f => ({ ...f, routeName: e.target.value }))} className={inputCls}>{routes.map(r => <option key={r.id}>{r.name}</option>)}</select></InputRow>
+            <InputRow label="Bus"><select value={schedForm.busNo} onChange={e => setSchedForm(f => ({ ...f, busNo: e.target.value }))} className={inputCls}>{buses.map(b => <option key={b.id}>{b.busNo}</option>)}</select></InputRow>
+            <InputRow label="Driver"><select value={schedForm.driver} onChange={e => setSchedForm(f => ({ ...f, driver: e.target.value }))} className={inputCls}>{drivers.map(d => <option key={d.id}>{d.name}</option>)}</select></InputRow>
+            <InputRow label="Date"><input type="date" value={schedForm.date} onChange={e => setSchedForm(f => ({ ...f, date: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Departure Time"><input type="time" value={schedForm.departureTime} onChange={e => setSchedForm(f => ({ ...f, departureTime: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Arrival Time"><input type="time" value={schedForm.arrivalTime} onChange={e => setSchedForm(f => ({ ...f, arrivalTime: e.target.value }))} className={inputCls} /></InputRow>
+            <InputRow label="Service Type"><select value={schedForm.serviceType} onChange={e => setSchedForm(f => ({ ...f, serviceType: e.target.value as typeof SERVICE_TYPES[number] }))} className={inputCls}>{SERVICE_TYPES.map(s => <option key={s}>{s}</option>)}</select></InputRow>
+            <InputRow label="Status"><select value={schedForm.status} onChange={e => setSchedForm(f => ({ ...f, status: e.target.value as ScheduleItem["status"] }))} className={inputCls}>{TRIP_STATUSES.map(s => <option key={s}>{s}</option>)}</select></InputRow>
+          </div>
+          <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setSchedModal(null)} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Cancel</button><button type="submit" className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--accent-dark)]">{schedModal?.mode === "add" ? "Add Schedule" : "Save Changes"}</button></div>
+        </form>
+      </Modal>
+      <ConfirmDeleteModal open={!!deleteSched} name={`${deleteSched?.routeName} (${deleteSched?.departureTime})`} onConfirm={() => { if (!deleteSched) return; removeSchedule(deleteSched.id); showToast("Schedule removed"); setDeleteSched(null); }} onClose={() => setDeleteSched(null)} />
+
+      {/* ── Conflict detail ── */}
+      <Modal open={!!viewConflict} title="Conflict Details" onClose={() => setViewConflict(null)}>
+        {viewConflict && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3"><div className="font-semibold text-rose-800">{viewConflict.resource}</div><div className="text-xs text-rose-700 mt-1">{viewConflict.reason}</div><div className="text-xs text-[var(--text-muted)] mt-1">{viewConflict.route} · {viewConflict.time}</div></div>
+            <div className="flex justify-end gap-3"><button type="button" onClick={() => setViewConflict(null)} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Close</button><button type="button" onClick={() => resolveConflict(viewConflict)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Mark Resolved</button></div>
+          </div>
+        )}
+      </Modal>
+      <ConfirmDeleteModal open={!!deleteConflictItem} name={deleteConflictItem?.resource ?? ""} onConfirm={() => { if (!deleteConflictItem) return; removeConflict(deleteConflictItem.id); showToast("Conflict record removed"); setDeleteConflictItem(null); }} onClose={() => setDeleteConflictItem(null)} />
+
+      {/* ── Exception handle ── */}
+      <Modal open={!!viewException} title="Handle Exception" onClose={() => setViewException(null)}>
+        {viewException && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3"><div className="font-semibold text-amber-800">{viewException.type}: {viewException.entity}</div><div className="text-xs text-amber-700 mt-1">{viewException.reason}</div><div className="text-xs text-[var(--text-muted)] mt-1">{viewException.route} · {viewException.time}</div></div>
+            <InputRow label="Resolution Note" required={false}>
+              <textarea rows={3} value={exceptionNote} onChange={e => setExceptionNote(e.target.value)} placeholder="Describe how this was resolved…" className={`${inputCls} resize-none`} />
+            </InputRow>
+            <div className="flex justify-end gap-3"><button type="button" onClick={() => setViewException(null)} className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--soft)]">Cancel</button><button type="button" onClick={() => resolveException(viewException, exceptionNote)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Resolve Exception</button></div>
+          </div>
+        )}
+      </Modal>
+      <ConfirmDeleteModal open={!!deleteExceptionItem} name={`${deleteExceptionItem?.type}: ${deleteExceptionItem?.entity}`} onConfirm={() => { if (!deleteExceptionItem) return; removeException(deleteExceptionItem.id); showToast("Exception record removed"); setDeleteExceptionItem(null); }} onClose={() => setDeleteExceptionItem(null)} />
+
+    </AppShell>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-[var(--text-muted)]">Loading admin dashboard…</div>}>
+      <AdminDashboardContent />
+    </Suspense>
+  );
+}

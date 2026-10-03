@@ -1095,3 +1095,249 @@ html.compact-tables table th {
   @media (prefers-reduced-motion: reduce) {
     .auth-access-card, .auth-mode-indicator, .auth-slider-track { transition-duration: .01ms !important; }
   }
+
+/* ═══════════════════════════════════════════════════════
+   PAGE LOADER — SRMSS brand logo + skeleton screen
+   shown while the homepage is mounting
+═══════════════════════════════════════════════════════ */
+
+/* Keyframes */
+@keyframes sk-shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+
+@keyframes loader-bar {
+  0%   { width: 0%; }
+  60%  { width: 75%; }
+  90%  { width: 92%; }
+  100% { width: 100%; }
+}
+
+@keyframes loader-brand-in {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes loader-orbit-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Outer wrapper ── */
+.page-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--page-bg);
+  overflow: hidden;
+}
+
+/* ── Brand / Logo block ── */
+.page-loader-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  margin-top: clamp(2.5rem, 7vw, 5rem);
+  margin-bottom: 2.5rem;
+  animation: loader-brand-in 0.5s ease both;
+}
+
+.page-loader-mark {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--accent);
+  box-shadow: 0 8px 24px rgba(20, 108, 250, 0.35);
+  flex-shrink: 0;
+}
+
+.page-loader-orbit {
+  position: absolute;
+  inset: -6px;
+  border-radius: 20px;
+  border: 2px solid var(--accent);
+  opacity: 0.3;
+  animation: loader-orbit-spin 2.4s linear infinite;
+}
+
+.page-loader-bus  { color: #ffffff; }
+.page-loader-route {
+  position: absolute;
+  bottom: 7px;
+  right: 7px;
+  color: rgba(255,255,255,0.8);
+}
+
+.page-loader-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.page-loader-copy strong {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.page-loader-copy small {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  max-width: 220px;
+}
+
+/* ── Skeleton container ── */
+.page-loader-skeleton {
+  width: 100%;
+  max-width: 960px;
+  padding: 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  animation: fade-in-up 0.5s 0.15s ease both;
+}
+
+/* Shared shimmer base */
+.sk {
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    var(--border) 0%,
+    rgba(148,163,184,0.12) 40%,
+    var(--border) 80%
+  );
+  background-size: 600px 100%;
+  animation: sk-shimmer 1.6s infinite linear;
+}
+
+/* ── Fake navbar ── */
+.skeleton-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--panel);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+}
+
+.sk-wide  { height: 16px; width: 120px; }
+.sk-short { height: 12px; width: 56px; border-radius: 8px; }
+.sk-btn   { height: 32px; width: 88px; border-radius: 10px; margin-left: auto; }
+.sk-btn--lg    { width: 140px; height: 40px; border-radius: 12px; }
+.sk-btn--ghost { opacity: 0.5; }
+
+.sk-nav-links {
+  display: flex;
+  gap: 0.75rem;
+  flex: 1;
+  justify-content: center;
+}
+
+/* ── Fake hero ── */
+.skeleton-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 2rem 1rem;
+  background: var(--panel);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+}
+
+.sk-hero-title {
+  height: 36px;
+  width: min(560px, 90%);
+  border-radius: 12px;
+}
+
+.sk-hero-sub {
+  height: 16px;
+  width: min(420px, 80%);
+  border-radius: 8px;
+}
+
+.sk-hero-sub--short {
+  width: min(300px, 65%);
+  opacity: 0.6;
+}
+
+.skeleton-hero-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+/* ── Fake strip ── */
+.skeleton-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.sk-strip-item {
+  height: 56px;
+  border-radius: 14px;
+}
+
+/* ── Fake cards ── */
+.skeleton-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 1.25rem;
+  background: var(--panel);
+  border-radius: 18px;
+  border: 1px solid var(--border);
+}
+
+.sk-card-icon  { width: 44px;  height: 44px;  border-radius: 12px; }
+.sk-card-title { height: 18px; width: 70%;   border-radius: 8px; }
+.sk-card-line  { height: 12px; width: 90%;   border-radius: 6px; }
+.sk-card-line--short { width: 60%; opacity: 0.6; }
+
+/* ── Progress bar at bottom ── */
+.page-loader-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--border);
+}
+
+.page-loader-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #00aeef);
+  border-radius: 0 2px 2px 0;
+  animation: loader-bar 1.8s ease-out forwards;
+}
+
+/* ── Homepage fade-in after loader hides ── */
+.homepage-content {
+  animation: fade-in-up 0.4s ease both;
+}

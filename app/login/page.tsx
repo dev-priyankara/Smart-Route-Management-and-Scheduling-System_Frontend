@@ -44,11 +44,25 @@ export default function LoginPage() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const isOperationalStaff = form.email.trim().toLowerCase() === "depot.clerk@srmss.lk";
+    const email = form.email.trim().toLowerCase();
+    let role: string;
+    let redirectPath: string;
+
+    if (email === "admin@srmss.lk") {
+      role = "admin";
+      redirectPath = "/admin";
+    } else if (email === "depot.clerk@srmss.lk") {
+      role = "operational-staff";
+      redirectPath = "/operational-staff";
+    } else {
+      role = "depot-supervisor";
+      redirectPath = "/dashboard";
+    }
+
     window.localStorage.setItem("srmss-demo-auth", "true");
-    window.localStorage.setItem("srmss-demo-role", isOperationalStaff ? "operational-staff" : "depot-supervisor");
+    window.localStorage.setItem("srmss-demo-role", role);
     window.dispatchEvent(new Event("srmss-demo-role-changed"));
-    router.push(isOperationalStaff ? "/operational-staff" : "/dashboard");
+    router.push(redirectPath);
   };
 
   const onRegister = (event: React.FormEvent) => {
@@ -125,6 +139,24 @@ export default function LoginPage() {
               <div className="text-xs font-bold uppercase tracking-wider text-[var(--accent)] mb-1">
                 ⚡ Quick Demo Access (1-Click Login)
               </div>
+              <div className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-bold text-[var(--text-primary)]">System Administrator</div>
+                  <div className="text-xs text-[var(--text-muted)]">admin@srmss.lk · Admin2026!</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => { setForm({ email: "admin@srmss.lk", password: "Admin2026!" }); setErrors({}); }} className="rounded-lg border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--panel)]">Fill</button>
+                  <button type="button" onClick={() => {
+                    window.localStorage.setItem("srmss-demo-auth", "true");
+                    window.localStorage.setItem("srmss-demo-role", "admin");
+                    window.dispatchEvent(new Event("srmss-demo-role-changed"));
+                    router.push("/admin");
+                  }} className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-700 shadow-sm">
+                    Login as Admin →
+                  </button>
+                </div>
+              </div>
+
               <div className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-bold text-[var(--text-primary)]">Depot Supervisor / Manager</div>
