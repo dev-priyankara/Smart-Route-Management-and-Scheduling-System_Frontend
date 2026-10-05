@@ -405,80 +405,7 @@ function SupervisorDashboardContent() {
     >
       <Toast message={toastMessage || ""} visible={Boolean(toastMessage)} />
 
-      {/* Role Banner */}
-      <div className="mb-6 rounded-3xl border border-[var(--accent)]/30 bg-gradient-to-r from-[var(--sidebar-bg)] via-[var(--panel)] to-[var(--soft)] p-5 text-[var(--text-primary)]">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--accent)]">
-              <Sparkles className="h-4 w-4" /> DEPOT SUPERVISOR DASHBOARD
-            </div>
-            <h2 className="text-xl font-bold">Today's Depot Operations Overview</h2>
-            <p className="text-sm text-[var(--text-secondary)]">
-              Monitor daily dispatches, track fleet utilization, manage resource allocation, and oversee vehicle availability.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setEmergencyAdjustmentOpen(true)}
-              className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-amber-700"
-            >
-              <AlertTriangle className="mr-1.5 h-4 w-4" /> Emergency Adjustment
-            </button>
-            <button
-              type="button"
-              onClick={() => setResourceAllocationOpen(true)}
-              className="rounded-xl bg-[var(--accent)] px-4 py-2 text-xs font-bold text-white transition hover:bg-[var(--accent-dark)]"
-            >
-              <Users className="mr-1.5 h-4 w-4" /> Allocate Resources
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Stats Bar */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-blue-500" />
-            <span className="text-sm font-medium text-[var(--text-secondary)]">Current Time</span>
-          </div>
-          <span className="font-bold text-[var(--text-primary)]">{new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-5 w-5 text-emerald-500" />
-            <span className="text-sm font-medium text-[var(--text-secondary)]">Date</span>
-          </div>
-          <span className="font-bold text-[var(--text-primary)]">{new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "short", day: "numeric" })}</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-amber-500" />
-            <span className="text-sm font-medium text-[var(--text-secondary)]">Depot Location</span>
-          </div>
-          <span className="font-bold text-[var(--text-primary)]">Central Bus Depot</span>
-        </div>
-        <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-indigo-500" />
-            <span className="text-sm font-medium text-[var(--text-secondary)]">Supervisor</span>
-          </div>
-          <span className="font-bold text-[var(--text-primary)]">A. De Silva</span>
-        </div>
-      </div>
-      
-
-      {/* COMPACT OPERATIONAL SUMMARY CARDS */}
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {summaryMetrics.map((metric) => (
-          <div key={metric.label}>
-            <MetricCard {...metric} />
-          </div>
-        ))}
-      </div>
-
-      {/* Section Switcher Tabs */}
+      {/* Section Switcher Tabs — always visible */}
       <div className="mb-6 flex flex-wrap gap-2 border-b border-[var(--border)] pb-4">
         {sections.map((sec) => {
           const Icon = sec.icon;
@@ -504,7 +431,78 @@ function SupervisorDashboardContent() {
       {/* OVERVIEW SECTION */}
       {currentSection === "overview" && (
         <div className="space-y-6">
-          {/* Action Required Alerts Panel */}
+
+          {/* Role Banner — overview only */}
+          <div className="rounded-3xl border border-[var(--accent)]/30 bg-gradient-to-r from-[var(--sidebar-bg)] via-[var(--panel)] to-[var(--soft)] p-5 text-[var(--text-primary)]">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[var(--accent)]">
+                  <Sparkles className="h-4 w-4" /> DEPOT SUPERVISOR DASHBOARD
+                </div>
+                <h2 className="text-xl font-bold">Today&apos;s Depot Operations Overview</h2>
+                <p className="text-sm text-[var(--text-secondary)]">
+                  Monitor daily dispatches, track fleet utilization, manage resource allocation, and oversee vehicle availability.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEmergencyAdjustmentOpen(true)}
+                  className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-amber-700"
+                >
+                  <AlertTriangle className="mr-1.5 h-4 w-4" /> Emergency Adjustment
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResourceAllocationOpen(true)}
+                  className="rounded-xl bg-[var(--accent)] px-4 py-2 text-xs font-bold text-white transition hover:bg-[var(--accent-dark)]"
+                >
+                  <Users className="mr-1.5 h-4 w-4" /> Allocate Resources
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Stats Bar — overview only */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-500" />
+                <span className="text-sm font-medium text-[var(--text-secondary)]">Current Time</span>
+              </div>
+              <span className="font-bold text-[var(--text-primary)]">{new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-emerald-500" />
+                <span className="text-sm font-medium text-[var(--text-secondary)]">Date</span>
+              </div>
+              <span className="font-bold text-[var(--text-primary)]">{new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "short", day: "numeric" })}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-amber-500" />
+                <span className="text-sm font-medium text-[var(--text-secondary)]">Depot Location</span>
+              </div>
+              <span className="font-bold text-[var(--text-primary)]">Central Bus Depot</span>
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-indigo-500" />
+                <span className="text-sm font-medium text-[var(--text-secondary)]">Supervisor</span>
+              </div>
+              <span className="font-bold text-[var(--text-primary)]">A. De Silva</span>
+            </div>
+          </div>
+
+          {/* KPI Metric Cards — overview only */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {summaryMetrics.map((metric) => (
+              <div key={metric.label}>
+                <MetricCard {...metric} />
+              </div>
+            ))}
+          </div>
           <SectionCard
             title="Action Required Alerts"
             subtitle="Operational items requiring immediate supervisor decision or intervention"
