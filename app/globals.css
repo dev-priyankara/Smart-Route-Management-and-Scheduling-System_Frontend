@@ -1129,6 +1129,18 @@ html.compact-tables table th {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ── Bus animation ── */
+@keyframes busMove {
+  0%   { transform: translateX(-60px) scale(1.5); }
+  33%  { transform: translateX(calc(100% + 60px)) scale(1.5); }
+  66%  { transform: translateX(calc(100% + 60px)) scale(1.5); }
+  100% { transform: translateX(-60px) scale(1.5); }
+}
+
+.bus-anim {
+  animation: busMove 20s linear infinite;
+}
+
 /* ── Outer wrapper ── */
 .page-loader {
   position: fixed;

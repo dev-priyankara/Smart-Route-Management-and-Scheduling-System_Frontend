@@ -34,7 +34,7 @@ import {
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useTheme } from "./ThemeProvider";
 import { operationalStaffSidebarItems, adminSidebarItems, sidebarItems as defaultSidebarItems } from "@/lib/mock-data";
-import { readPreferences } from "@/lib/preferences";
+import { readPreferences, THEME_PRESETS } from "@/lib/preferences";
 
 // ─── Icon registry ────────────────────────────────────────────────────────────
 
@@ -339,15 +339,12 @@ export function AppShell({
   useEffect(() => {
     const applyPreferences = () => {
       const preferences = readPreferences();
-      const darkAccent: Record<string, string> = {
-        "#146cfa": "#0d4ec9",
-        "#00866a": "#00634d",
-        "#d05a28": "#a8421b",
-        "#a63f57": "#853047",
-      };
-      document.documentElement.style.setProperty("--accent", preferences.accent);
-      document.documentElement.style.setProperty("--accent-dark", darkAccent[preferences.accent] ?? "#0d4ec9");
-      document.documentElement.style.setProperty("--accent-soft", `${preferences.accent}1f`);
+      const preset = THEME_PRESETS.find(p => p.name === preferences.themePreset) ?? THEME_PRESETS.find(p => p.accent === preferences.accent) ?? THEME_PRESETS[0];
+      const accent = preset.accent;
+      const accentDark = preset.accentDark;
+      document.documentElement.style.setProperty("--accent", accent);
+      document.documentElement.style.setProperty("--accent-dark", accentDark);
+      document.documentElement.style.setProperty("--accent-soft", `${accent}1f`);
       document.documentElement.classList.toggle("compact-tables", preferences.compactTables);
       setSidebarCollapsed(preferences.sidebarCollapsed);
     };

@@ -47,8 +47,10 @@ export type Driver = {
   licenseNumber: string;
   phone: string;
   assignedRoute: string;
+  assignedBusId?: number;
   workingHours: string;
   status: DriverStatus;
+  insuranceDate?: string;
 };
 
 export type FuelRecord = {
@@ -93,7 +95,6 @@ export const adminSidebarItems = [
   { label: "Route Network", href: "/admin?section=routes", icon: "Route" },
   { label: "Timetable", href: "/admin?section=schedules", icon: "CalendarDays" },
   { label: "Reports & Analytics", href: "/admin?section=reports", icon: "BarChart3" },
-  { label: "System Settings", href: "/admin?section=settings", icon: "Settings" },
 ];
 
 export const operationalStaffSidebarItems = [
@@ -233,12 +234,12 @@ export const busData: Bus[] = [
 ];
 
 export const driverData: Driver[] = [
-  { id: 1, name: "S. Perera", licenseNumber: "B-1598", phone: "077-245-9140", assignedRoute: "Colombo - Kandy", workingHours: "06:00 - 15:00", status: "On Duty" },
-  { id: 2, name: "N. Silva", licenseNumber: "B-2081", phone: "071-442-7801", assignedRoute: "Kandy - Matale", workingHours: "07:00 - 16:00", status: "Available" },
-  { id: 3, name: "R. Fernando", licenseNumber: "B-3552", phone: "076-881-3302", assignedRoute: "Galle - Matara", workingHours: "05:30 - 14:30", status: "On Duty" },
-  { id: 4, name: "M. Jayawardena", licenseNumber: "B-4419", phone: "070-117-8911", assignedRoute: "Kurunegala - Puttalam", workingHours: "08:00 - 17:00", status: "Off Duty" },
-  { id: 5, name: "T. Kumara", licenseNumber: "B-5029", phone: "075-984-8772", assignedRoute: "Negombo - Colombo", workingHours: "06:30 - 15:30", status: "On Duty" },
-  { id: 6, name: "H. Wanigasekara", licenseNumber: "B-6280", phone: "078-443-1124", assignedRoute: "Kandy - Matale", workingHours: "09:00 - 18:00", status: "Available" },
+  { id: 1, name: "S. Perera", licenseNumber: "B-1598", phone: "077-245-9140", assignedRoute: "Colombo - Kandy", assignedBusId: 1, workingHours: "06:00 - 15:00", status: "On Duty", insuranceDate: "2027-05-15" },
+  { id: 2, name: "N. Silva", licenseNumber: "B-2081", phone: "071-442-7801", assignedRoute: "Kandy - Matale", assignedBusId: 2, workingHours: "07:00 - 16:00", status: "Available", insuranceDate: "2026-11-30" },
+  { id: 3, name: "R. Fernando", licenseNumber: "B-3552", phone: "076-881-3302", assignedRoute: "Galle - Matara", assignedBusId: 3, workingHours: "05:30 - 14:30", status: "On Duty", insuranceDate: "2027-02-28" },
+  { id: 4, name: "M. Jayawardena", licenseNumber: "B-4419", phone: "070-117-8911", assignedRoute: "Kurunegala - Puttalam", assignedBusId: 4, workingHours: "08:00 - 17:00", status: "Off Duty", insuranceDate: "2026-12-15" },
+  { id: 5, name: "T. Kumara", licenseNumber: "B-5029", phone: "075-984-8772", assignedRoute: "Negombo - Colombo", assignedBusId: 5, workingHours: "06:30 - 15:30", status: "On Duty", insuranceDate: "2027-08-20" },
+  { id: 6, name: "H. Wanigasekara", licenseNumber: "B-6280", phone: "078-443-1124", assignedRoute: "Kandy - Matale", assignedBusId: 6, workingHours: "09:00 - 18:00", status: "Available", insuranceDate: "2027-01-10" },
 ];
 
 export const scheduleData: ScheduleItem[] = [

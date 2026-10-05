@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Eye, Users, Wrench } from "lucide-react";
+import { AlertTriangle, Eye, Wrench } from "lucide-react";
 import { SectionCard, StatusBadge } from "@/components/shell";
 import type { AdminSectionProps } from "../types";
 
@@ -10,7 +10,6 @@ type Props = Pick<
   | "unresolvedConflicts"
   | "openExceptions"
   | "busesUnderMaintenance"
-  | "mockUsers"
   | "activeBuses"
   | "buses"
   | "dispatchedTrips"
@@ -26,7 +25,6 @@ export function AdminOverviewSection({
   unresolvedConflicts,
   openExceptions,
   busesUnderMaintenance,
-  mockUsers,
   activeBuses,
   buses,
   dispatchedTrips,
@@ -131,15 +129,6 @@ export function AdminOverviewSection({
                   {busesUnderMaintenance.length} Buses Under Maintenance
                 </div>
                 <p className="text-xs text-[var(--text-secondary)] mt-1">Fleet availability may be impacted</p>
-              </div>
-            )}
-            {mockUsers.filter((u) => u.status === "Inactive").length > 0 && (
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--soft)] p-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
-                  <Users className="h-4 w-4" />
-                  {mockUsers.filter((u) => u.status === "Inactive").length} Inactive Users
-                </div>
-                <p className="text-xs text-[var(--text-secondary)] mt-1">User accounts requiring review</p>
               </div>
             )}
           </div>

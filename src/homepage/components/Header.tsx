@@ -40,8 +40,8 @@ export function Header() {
         >
           {theme === "light" ? <Moon size={17} /> : <Sun size={18} />}
         </button>
-        <Link className="public-book-button" href="/login#register">
-          <BusFront size={16} /> Book Now
+        <Link className="public-book-button" href="/login">
+          <BusFront size={16} /> Login
         </Link>
         <button
           className="public-menu-button"

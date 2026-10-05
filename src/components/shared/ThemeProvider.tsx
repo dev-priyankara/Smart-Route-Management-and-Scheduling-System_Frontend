@@ -25,6 +25,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       const nextTheme = storedTheme ?? (prefersDark ? "dark" : "light");
       setTheme(nextTheme);
       setMounted(true);
+      // Apply saved theme preset on mount
+      const { readPreferences, THEME_PRESETS } = require("@/lib/preferences");
+      const prefs = readPreferences();
+      const preset = THEME_PRESETS.find((p: { name: string; accent: string; accentDark: string }) => p.name === prefs.themePreset) ?? THEME_PRESETS[0];
+      document.documentElement.style.setProperty("--accent", preset.accent);
+      document.documentElement.style.setProperty("--accent-dark", preset.accentDark);
+      document.documentElement.style.setProperty("--accent-soft", preset.accent + "1f");
     }, 0);
     return () => clearTimeout(id);
   }, []);

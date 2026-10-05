@@ -18,7 +18,7 @@ export type AdminUser = {
   email: string;
   role: string;
   department: string;
-  status: "Active" | "Inactive";
+  status: "Active" | "Inactive" | "Pending" | "Resigned";
   lastLogin: string;
 };
 
@@ -29,7 +29,7 @@ export type AdminDepot = {
   manager: string;
   buses: number;
   staff: number;
-  status: "Active" | "Maintenance";
+  status: "Active" | "Maintenance" | "Closed";
 };
 
 export type StatusDataItem = {
