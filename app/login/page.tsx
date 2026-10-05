@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowRight, CheckCircle2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, Home, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 
 // ─── Demo credentials ─────────────────────────────────────────────────────────
 
@@ -303,6 +303,14 @@ export default function LoginPage() {
 
               {/* Header */}
               <div className="flex items-center justify-between px-6 pt-6 sm:px-8 sm:pt-8 pb-2">
+                <button
+                  type="button"
+                  onClick={() => router.push("/")}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--soft)] text-[var(--text-secondary)] transition hover:bg-[var(--panel)] hover:text-[var(--accent)]"
+                  title="Go to homepage"
+                >
+                  <Home className="h-5 w-5" />
+                </button>
                 <div>
                   <div className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Secure Access</div>
                   <h2 className="mt-1.5 text-2xl font-bold text-[var(--text-primary)]">Welcome back</h2>
