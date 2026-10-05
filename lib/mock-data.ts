@@ -414,3 +414,58 @@ export const supervisorExceptionsData: OperationalException[] = [
     resolutionNote: "Departure delayed by +15m; passengers notified.",
   },
 ];
+
+// ─── Admin: User Management ─────────────────────────────────────────────────────
+
+export type SystemUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: "System Administrator" | "Depot Administrator" | "Operational Staff";
+  depot: string;
+  status: "Active" | "Suspended";
+  lastLogin: string;
+  createdDate: string;
+};
+
+export const adminUsersData: SystemUser[] = [
+  { id: 1, name: "S. Admin", email: "admin@srmss.lk", role: "System Administrator", depot: "Central Depot", status: "Active", lastLogin: "2026-10-05 08:12", createdDate: "2026-01-10" },
+  { id: 2, name: "A. De Silva", email: "depot.admin@srmss.lk", role: "Depot Administrator", depot: "Central Depot", status: "Active", lastLogin: "2026-10-05 07:45", createdDate: "2026-02-14" },
+  { id: 3, name: "K. Bandara", email: "depot.clerk@srmss.lk", role: "Operational Staff", depot: "Central Depot", status: "Active", lastLogin: "2026-10-05 09:02", createdDate: "2026-03-02" },
+  { id: 4, name: "N. Silva", email: "n.silva@srmss.lk", role: "Depot Administrator", depot: "Kandy Depot", status: "Active", lastLogin: "2026-10-04 16:30", createdDate: "2026-04-18" },
+  { id: 5, name: "R. Fernando", email: "r.fernando@srmss.lk", role: "Operational Staff", depot: "Galle Depot", status: "Suspended", lastLogin: "2026-09-28 11:05", createdDate: "2026-05-09" },
+  { id: 6, name: "M. Perera", email: "m.perera@srmss.lk", role: "Operational Staff", depot: "Negombo Depot", status: "Active", lastLogin: "2026-10-05 06:40", createdDate: "2026-06-21" },
+];
+
+// ─── Admin: Depot Management ────────────────────────────────────────────────────
+
+export type Depot = {
+  id: number;
+  name: string;
+  code: string;
+  location: string;
+  region: string;
+  buses: number;
+  drivers: number;
+  activeRoutes: number;
+  supervisor: string;
+  contact: string;
+  status: "Operational" | "Limited" | "Closed";
+};
+
+export const depotsData: Depot[] = [
+  { id: 1, name: "Central Bus Depot", code: "DEP-CBK", location: "Colombo, Pepitiya Road", region: "Western", buses: 6, drivers: 6, activeRoutes: 5, supervisor: "A. De Silva", contact: "011-256-8800", status: "Operational" },
+  { id: 2, name: "Kandy Bus Depot", code: "DEP-KDY", location: "Kandy, Peradeniya Road", region: "Central", buses: 4, drivers: 4, activeRoutes: 3, supervisor: "N. Silva", contact: "081-223-4455", status: "Operational" },
+  { id: 3, name: "Galle Bus Depot", code: "DEP-GLL", location: "Galle, Hikkaduwa Road", region: "Southern", buses: 3, drivers: 3, activeRoutes: 2, supervisor: "R. Fernando", contact: "091-224-7710", status: "Limited" },
+  { id: 4, name: "Negombo Bus Depot", code: "DEP-NEG", location: "Negombo, Lewis Place", region: "Western", buses: 2, drivers: 2, activeRoutes: 1, supervisor: "T. Kumara", contact: "031-225-9900", status: "Operational" },
+];
+
+// ─── Admin: System-wide summary KPIs ────────────────────────────────────────────
+
+export const adminSummaryKpis = [
+  { label: "Total Depots", value: String(depotsData.length), detail: "Operational across Sri Lanka", icon: "Building2" },
+  { label: "Total Routes", value: "18", detail: "Active service corridors", icon: "Route" },
+  { label: "Total Buses", value: String(busData.length), detail: "Fleet across all depots", icon: "Bus" },
+  { label: "Total Drivers", value: String(driverData.length), detail: "Registered on roster", icon: "Users" },
+  { label: "System Users", value: String(adminUsersData.length), detail: "Accounts across roles", icon: "UserCog" },
+];
