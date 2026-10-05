@@ -569,16 +569,19 @@ export function PrimaryButton({
   children,
   onClick,
   className = "",
+  disabled = false,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--accent-dark)] ${className}`}
+      disabled={disabled}
+      className={`inline-flex items-center justify-center rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--accent-dark)] disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
     >
       {children}
     </button>

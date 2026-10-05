@@ -7,6 +7,7 @@ import {
   Clock, Download, Edit2, Eye, FileText, Gauge, History, LayoutDashboard,
   MapPin, Navigation, PencilLine, Phone, Plus, Route, Search, Settings,
   ShieldCheck, Trash2, UserCog, Users, Wrench, X, CheckCircle, XCircle,
+  ArrowUpRight, ArrowDownRight, Minus, Zap, Award, Target, TrendingUp, TrendingDown, AlertCircle, Info, Lightbulb
 } from "lucide-react";
 import { readPreferences, THEME_PRESETS, ThemePresetName, applyThemePreset } from "@/lib/preferences";
 import {
@@ -20,6 +21,12 @@ import {
   maintenanceRecords, fuelRecords,
 } from "@/lib/mock-data";
 import { usePersistentCollection } from "@/lib/use-persistent-collection";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer, AreaChart, Area
+} from "recharts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,7 +84,827 @@ function ConfirmDeleteModal({ open, name, onConfirm, onClose }: { open: boolean;
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Reporting & Analytics Module ─────────────────────────────────
+
+type ReportPeriod = "weekly" | "monthly" | "custom";
+
+type ReportingAnalyticsProps = {
+  schedules: ScheduleItem[];
+  routes: DepotRoute[];
+  buses: BusRecord[];
+  drivers: DriverRecord[];
+  fuel: { id: number; date: string; busNo: string; route: string; fuelLiters: number; cost: number; remarks: string }[];
+  maintenance: { id: number; vehicle: string; type: string; date: string; nextServiceDate: string; status: string; remarks: string }[];
+  conflicts: ScheduleConflict[];
+  exceptions: OperationalException[];
+  onTimeRate: number;
+};
+
+function ReportingAnalyticsSection({
+  schedules, routes, buses, drivers, fuel, maintenance, conflicts, exceptions, onTimeRate,
+}: ReportingAnalyticsProps) {
+  const [period, setPeriod] = useState<ReportPeriod>("monthly");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+
+  const dateRange = useMemo(() => {
+    const end = new Date(today);
+    const start = new Date(today);
+    if (period === "weekly") {
+      start.setDate(end.getDate() - 7);
+    } else if (period === "monthly") {
+      start.setMonth(end.getMonth() - 1);
+    } else if (period === "custom" && customStart && customEnd) {
+      return { start: new Date(customStart), end: new Date(customEnd) };
+    }
+    return { start, end };
+  }, [period, customStart, customEnd, todayStr]);
+
+  const inRange = useCallback((dateStr: string) => {
+    const d = new Date(dateStr);
+    return d >= dateRange.start && d <= dateRange.end;
+  }, [dateRange]);
+
+  const filteredSchedules = useMemo(() =>
+    schedules.filter((s) => inRange(s.date)),
+    [schedules, inRange]
+  );
+  const filteredFuel = useMemo(() =>
+    fuel.filter((f) => inRange(f.date)),
+    [fuel, inRange]
+  );
+  const filteredMaintenance = useMemo(() =>
+    maintenance.filter((m) => inRange(m.date)),
+    [maintenance, inRange]
+  );
+
+  const tripMetrics = useMemo(() => {
+    const total = filteredSchedules.length;
+    const completed = filteredSchedules.filter((s) => s.status === "Completed").length;
+    const onTime = filteredSchedules.filter((s) => s.status === "On Time").length;
+    const delayed = filteredSchedules.filter((s) => s.status === "Delayed").length;
+    const scheduled = filteredSchedules.filter((s) => s.status === "Scheduled").length;
+    const completionRate = total ? Math.round((completed / total) * 100) : 0;
+    const punctualityRate = total ? Math.round(((completed + onTime) / total) * 100) : 0;
+    return { total, completed, onTime, delayed, scheduled, completionRate, punctualityRate };
+  }, [filteredSchedules]);
+
+  const routePerformance = useMemo(() => {
+    const byRoute = new Map<string, { total: number; completed: number; onTime: number; delayed: number }>();
+    filteredSchedules.forEach((s) => {
+      const entry = byRoute.get(s.routeName) || { total: 0, completed: 0, onTime: 0, delayed: 0 };
+      entry.total++;
+      if (s.status === "Completed") entry.completed++;
+      if (s.status === "On Time") entry.onTime++;
+      if (s.status === "Delayed") entry.delayed++;
+      byRoute.set(s.routeName, entry);
+    });
+    return Array.from(byRoute.entries()).map(([name, data]) => ({
+      name,
+      ...data,
+      completionRate: data.total ? Math.round((data.completed / data.total) * 100) : 0,
+      punctualityRate: data.total ? Math.round(((data.completed + data.onTime) / data.total) * 100) : 0,
+    })).sort((a, b) => b.punctualityRate - a.punctualityRate);
+  }, [filteredSchedules]);
+
+  const fuelTrends = useMemo(() => {
+    const byDate = new Map<string, { liters: number; cost: number }>();
+    filteredFuel.forEach((f) => {
+      const entry = byDate.get(f.date) || { liters: 0, cost: 0 };
+      entry.liters += f.fuelLiters;
+      entry.cost += f.cost;
+      byDate.set(f.date, entry);
+    });
+    return Array.from(byDate.entries())
+      .map(([date, data]) => ({ date: date.slice(5), ...data }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [filteredFuel]);
+
+  const fuelSummary = useMemo(() => {
+    const totalLiters = filteredFuel.reduce((s, f) => s + f.fuelLiters, 0);
+    const totalCost = filteredFuel.reduce((s, f) => s + f.cost, 0);
+    const avgPerTrip = tripMetrics.total ? (totalLiters / tripMetrics.total).toFixed(1) : "0";
+    const avgCostPerTrip = tripMetrics.total ? Math.round(totalCost / tripMetrics.total) : 0;
+    return { totalLiters, totalCost, avgPerTrip, avgCostPerTrip };
+  }, [filteredFuel, tripMetrics.total]);
+
+  const fleetUtilization = useMemo(() => {
+    const active = buses.filter((b) => b.status === "Active" || b.status === "In Service").length;
+    const maintenanceCount = buses.filter((b) => b.status === "Under Maintenance").length;
+    const outOfService = buses.filter((b) => b.status === "Out of Service").length;
+    const utilizationRate = buses.length ? Math.round((active / buses.length) * 100) : 0;
+    return { active, maintenanceCount, outOfService, utilizationRate, total: buses.length };
+  }, [buses]);
+
+  const maintenanceSummary = useMemo(() => {
+    const completed = filteredMaintenance.filter((m) => m.status === "Completed").length;
+    const scheduled = filteredMaintenance.filter((m) => m.status === "Scheduled").length;
+    const overdue = filteredMaintenance.filter((m) => m.status === "Overdue").length;
+    return { completed, scheduled, overdue, total: filteredMaintenance.length };
+  }, [filteredMaintenance]);
+
+  const weeklyTrend = useMemo(() => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const byDay = new Map<string, { trips: number; completed: number; delayed: number }>();
+    filteredSchedules.forEach((s) => {
+      const dayName = days[new Date(s.date).getDay()];
+      const entry = byDay.get(dayName) || { trips: 0, completed: 0, delayed: 0 };
+      entry.trips++;
+      if (s.status === "Completed") entry.completed++;
+      if (s.status === "Delayed") entry.delayed++;
+      byDay.set(dayName, entry);
+    });
+    return days.map((day) => {
+      const data = byDay.get(day) || { trips: 0, completed: 0, delayed: 0 };
+      return { day, ...data, completionRate: data.trips ? Math.round((data.completed / data.trips) * 100) : 0 };
+    });
+  }, [filteredSchedules]);
+
+  const tripStatusDistribution = useMemo(() => [
+    { name: "Completed", value: tripMetrics.completed, color: "#10B981" },
+    { name: "On Time", value: tripMetrics.onTime, color: "#146CFA" },
+    { name: "Delayed", value: tripMetrics.delayed, color: "#F59E0B" },
+    { name: "Scheduled", value: tripMetrics.scheduled, color: "#8B5CF6" },
+  ], [tripMetrics]);
+
+  const insights = useMemo(() => {
+    const list: { type: "positive" | "warning" | "info"; title: string; description: string }[] = [];
+
+    if (tripMetrics.punctualityRate >= 90) {
+      list.push({ type: "positive", title: "Excellent Punctuality", description: `Punctuality rate of ${tripMetrics.punctualityRate}% exceeds the 90% target. Current scheduling practices are effective.` });
+    } else if (tripMetrics.punctualityRate >= 75) {
+      list.push({ type: "info", title: "Good Punctuality", description: `Punctuality rate of ${tripMetrics.punctualityRate}% is within acceptable range. Monitor for improvement opportunities.` });
+    } else {
+      list.push({ type: "warning", title: "Punctuality Below Target", description: `Punctuality rate of ${tripMetrics.punctualityRate}% is below the 75% threshold. Review scheduling and resource allocation.` });
+    }
+
+    if (tripMetrics.delayed > 0) {
+      list.push({ type: "warning", title: "Delayed Trips Detected", description: `${tripMetrics.delayed} trips were delayed in this period. Investigate root causes such as traffic, vehicle issues, or driver availability.` });
+    }
+
+    if (fuelSummary.totalLiters > 0) {
+      list.push({ type: "info", title: "Fuel Efficiency", description: `Average fuel consumption is ${fuelSummary.avgPerTrip} L per trip (LKR ${fuelSummary.avgCostPerTrip.toLocaleString()} per trip). Total consumption: ${fuelSummary.totalLiters} L.` });
+    }
+
+    if (maintenanceSummary.overdue > 0) {
+      list.push({ type: "warning", title: "Overdue Maintenance", description: `${maintenanceSummary.overdue} maintenance tasks are overdue. Immediate attention required to prevent vehicle breakdowns.` });
+    }
+
+    if (fleetUtilization.utilizationRate < 70) {
+      list.push({ type: "info", title: "Fleet Underutilized", description: `Fleet utilization at ${fleetUtilization.utilizationRate}%. Consider reallocating vehicles to high-demand routes.` });
+    } else if (fleetUtilization.utilizationRate > 90) {
+      list.push({ type: "warning", title: "Fleet Near Capacity", description: `Fleet utilization at ${fleetUtilization.utilizationRate}%. Limited spare capacity for emergency dispatch.` });
+    }
+
+    const unresolvedConflicts = conflicts.filter((c) => c.status === "Unresolved").length;
+    if (unresolvedConflicts > 0) {
+      list.push({ type: "warning", title: "Unresolved Conflicts", description: `${unresolvedConflicts} scheduling conflicts remain unresolved. Address to improve operational efficiency.` });
+    }
+
+    const openExceptions = exceptions.filter((e) => e.status !== "Resolved").length;
+    if (openExceptions > 0) {
+      list.push({ type: "info", title: "Open Exceptions", description: `${openExceptions} operational exceptions are currently open. Track resolution progress.` });
+    }
+
+    if (routePerformance.length > 0) {
+      const bestRoute = routePerformance[0];
+      const worstRoute = routePerformance[routePerformance.length - 1];
+      if (bestRoute && worstRoute && bestRoute.name !== worstRoute.name) {
+        list.push({ type: "positive", title: "Route Performance Gap", description: `Best performing route: ${bestRoute.name} (${bestRoute.punctualityRate}%). Lowest: ${worstRoute.name} (${worstRoute.punctualityRate}%). Consider replicating best practices.` });
+      }
+    }
+
+    return list;
+  }, [tripMetrics, fuelSummary, maintenanceSummary, fleetUtilization, conflicts, exceptions, routePerformance]);
+
+  const periodLabel = period === "weekly" ? "Weekly" : period === "monthly" ? "Monthly" : "Custom";
+  const rangeLabel = `${dateRange.start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${dateRange.end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+
+  const exportPDF = useCallback(() => {
+    setExporting(true);
+    try {
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 14;
+      const contentWidth = pageWidth - margin * 2;
+      let y = margin;
+
+      const accent: [number, number, number] = [20, 108, 250];
+      const dark: [number, number, number] = [30, 41, 59];
+      const muted: [number, number, number] = [100, 116, 139];
+      const green: [number, number, number] = [16, 185, 129];
+      const amber: [number, number, number] = [245, 158, 11];
+      const rose: [number, number, number] = [239, 68, 68];
+
+      const addFooter = (pageNum: number, totalPages: number) => {
+        const pages = pdf.getNumberOfPages();
+        for (let i = 1; i <= pages; i++) {
+          pdf.setPage(i);
+          pdf.setFontSize(8);
+          pdf.setTextColor(...muted);
+          pdf.text("Smart Route Management & Scheduling System (SRMSS)", margin, pageHeight - 8);
+          pdf.text(`Page ${i} of ${pages}`, pageWidth - margin, pageHeight - 8, { align: "right" });
+          pdf.text("Confidential - For Management Review & Sustainability Reporting", pageWidth / 2, pageHeight - 8, { align: "center" });
+        }
+      };
+
+      const checkPageBreak = (needed: number) => {
+        if (y + needed > pageHeight - margin - 10) {
+          pdf.addPage();
+          y = margin;
+          return true;
+        }
+        return false;
+      };
+
+      // ── Report Header ──
+      pdf.setFillColor(...accent);
+      pdf.rect(0, 0, pageWidth, 28, "F");
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(16);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("SRMSS OPERATIONAL REPORT", margin, 12);
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      pdf.text(`${periodLabel} Performance Report`, margin, 19);
+      pdf.text(`Reporting Period: ${rangeLabel}`, margin, 24);
+      y = 36;
+
+      // Generated info
+      pdf.setTextColor(...dark);
+      pdf.setFontSize(9);
+      pdf.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+      y += 8;
+
+      // ── KPI Summary ──
+      checkPageBreak(30);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...dark);
+      pdf.text("Executive Summary", margin, y);
+      y += 4;
+
+      autoTable(pdf, {
+        startY: y,
+        head: [["Total Trips", "Completion Rate", "Punctuality Rate", "Delayed Trips"]],
+        body: [[
+          String(tripMetrics.total),
+          `${tripMetrics.completionRate}%`,
+          `${tripMetrics.punctualityRate}%`,
+          String(tripMetrics.delayed),
+        ]],
+        theme: "striped",
+        headStyles: { fillColor: accent, fontSize: 9, fontStyle: "bold" },
+        bodyStyles: { fontSize: 10, fontStyle: "bold", textColor: dark },
+        margin: { left: margin, right: margin },
+        styles: { cellPadding: 4 },
+      });
+      y = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+      // ── Trip Completion Trend ──
+      checkPageBreak(50);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...dark);
+      pdf.text("Trip Completion Trend (by Day)", margin, y);
+      y += 4;
+
+      const trendRows = weeklyTrend
+        .filter((d) => d.trips > 0)
+        .map((d) => [d.day, String(d.trips), String(d.completed), String(d.delayed), `${d.completionRate}%`]);
+      if (trendRows.length > 0) {
+        autoTable(pdf, {
+          startY: y,
+          head: [["Day", "Total Trips", "Completed", "Delayed", "Completion %"]],
+          body: trendRows,
+          theme: "striped",
+          headStyles: { fillColor: accent, fontSize: 9 },
+          styles: { fontSize: 9, cellPadding: 3 },
+          margin: { left: margin, right: margin },
+        });
+        y = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+      } else {
+        pdf.setFontSize(9);
+        pdf.setTextColor(...muted);
+        pdf.text("No trip data for this period.", margin, y);
+        y += 8;
+      }
+
+      // ── Trip Status Distribution ──
+      checkPageBreak(40);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...dark);
+      pdf.text("Trip Status Distribution", margin, y);
+      y += 4;
+
+      autoTable(pdf, {
+        startY: y,
+        head: [["Status", "Count", "Percentage"]],
+        body: [
+          ["Completed", String(tripMetrics.completed), `${tripMetrics.total ? Math.round((tripMetrics.completed / tripMetrics.total) * 100) : 0}%`],
+          ["On Time", String(tripMetrics.onTime), `${tripMetrics.total ? Math.round((tripMetrics.onTime / tripMetrics.total) * 100) : 0}%`],
+          ["Delayed", String(tripMetrics.delayed), `${tripMetrics.total ? Math.round((tripMetrics.delayed / tripMetrics.total) * 100) : 0}%`],
+          ["Scheduled", String(tripMetrics.scheduled), `${tripMetrics.total ? Math.round((tripMetrics.scheduled / tripMetrics.total) * 100) : 0}%`],
+        ],
+        theme: "striped",
+        headStyles: { fillColor: accent, fontSize: 9 },
+        styles: { fontSize: 9, cellPadding: 3 },
+        margin: { left: margin, right: margin },
+      });
+      y = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+      // ── Route Performance ──
+      checkPageBreak(50);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...dark);
+      pdf.text("Route Performance Analysis", margin, y);
+      y += 4;
+
+      if (routePerformance.length > 0) {
+        autoTable(pdf, {
+          startY: y,
+          head: [["Route", "Trips", "Completed", "On Time", "Delayed", "Punctuality %", "Completion %"]],
+          body: routePerformance.map((r) => [
+            r.name,
+            String(r.total),
+            String(r.completed),
+            String(r.onTime),
+            String(r.delayed),
+            `${r.punctualityRate}%`,
+            `${r.completionRate}%`,
+          ]),
+          theme: "striped",
+          headStyles: { fillColor: accent, fontSize: 8 },
+          styles: { fontSize: 8, cellPadding: 3 },
+          margin: { left: margin, right: margin },
+          columnStyles: { 0: { cellWidth: 42 } },
+        });
+        y = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+      } else {
+        pdf.setFontSize(9);
+        pdf.setTextColor(...muted);
+        pdf.text("No route data for this period.", margin, y);
+        y += 8;
+      }
+
+      // ── Fuel Consumption ──
+      checkPageBreak(50);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...dark);
+      pdf.text("Fuel Consumption Trends", margin, y);
+      y += 4;
+
+      if (fuelTrends.length > 0) {
+        autoTable(pdf, {
+          startY: y,
+          head: [["Date", "Fuel (Liters)", "Cost (LKR)"]],
+          body: fuelTrends.map((f) => [f.date, String(f.liters), f.cost.toLocaleString()]),
+          theme: "striped",
+          headStyles: { fillColor: amber, fontSize: 9 },
+          styles: { fontSize: 9, cellPadding: 3 },
+          margin: { left: margin, right: margin },
+        });
+        y = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+      }
+
+      // Fuel summary
+      checkPageBreak(30);
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...dark);
+      pdf.text("Fuel Summary", margin, y);
+      y += 4;
+      autoTable(pdf, {
+        startY: y,
+        head: [["Total Fuel", "Total Cost", "Avg per Trip", "Avg Cost/Trip"]],
+        body: [[
+          `${fuelSummary.totalLiters} L`,
+          `LKR ${fuelSummary.totalCost.toLocaleString()}`,
+          `${fuelSummary.avgPerTrip} L`,
+          `LKR ${fuelSummary.avgCostPerTrip.toLocaleString()}`,
+        ]],
+        theme: "striped",
+        headStyles: { fillColor: amber, fontSize: 9 },
+        bodyStyles: { fontSize: 9, fontStyle: "bold" },
+        margin: { left: margin, right: margin },
+        styles: { cellPadding: 4 },
+      });
+      y = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+      // ── Fleet Utilization ──
+      checkPageBreak(40);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...dark);
+      pdf.text("Fleet Utilization", margin, y);
+      y += 4;
+
+      autoTable(pdf, {
+        startY: y,
+        head: [["Category", "Count", "Percentage"]],
+        body: [
+          ["Active / In Service", String(fleetUtilization.active), `${fleetUtilization.total ? Math.round((fleetUtilization.active / fleetUtilization.total) * 100) : 0}%`],
+          ["Under Maintenance", String(fleetUtilization.maintenanceCount), `${fleetUtilization.total ? Math.round((fleetUtilization.maintenanceCount / fleetUtilization.total) * 100) : 0}%`],
+          ["Out of Service", String(fleetUtilization.outOfService), `${fleetUtilization.total ? Math.round((fleetUtilization.outOfService / fleetUtilization.total) * 100) : 0}%`],
+        ],
+        theme: "striped",
+        headStyles: { fillColor: green, fontSize: 9 },
+        styles: { fontSize: 9, cellPadding: 3 },
+        margin: { left: margin, right: margin },
+      });
+      y = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...accent);
+      pdf.text(`Fleet Utilization Rate: ${fleetUtilization.utilizationRate}%`, margin, y);
+      y += 8;
+
+      // ── Maintenance Summary ──
+      checkPageBreak(40);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...dark);
+      pdf.text("Maintenance Summary", margin, y);
+      y += 4;
+
+      autoTable(pdf, {
+        startY: y,
+        head: [["Completed", "Scheduled", "Overdue", "Total Records"]],
+        body: [[
+          String(maintenanceSummary.completed),
+          String(maintenanceSummary.scheduled),
+          String(maintenanceSummary.overdue),
+          String(maintenanceSummary.total),
+        ]],
+        theme: "striped",
+        headStyles: { fillColor: maintenanceSummary.overdue > 0 ? rose : green, fontSize: 9 },
+        bodyStyles: { fontSize: 10, fontStyle: "bold" },
+        margin: { left: margin, right: margin },
+        styles: { cellPadding: 4 },
+      });
+      y = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+      // ── Data-Driven Insights ──
+      checkPageBreak(40);
+      pdf.setFontSize(12);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...dark);
+      pdf.text("Data-Driven Insights", margin, y);
+      y += 6;
+
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      insights.forEach((insight) => {
+        checkPageBreak(16);
+        const color = insight.type === "positive" ? green : insight.type === "warning" ? amber : accent;
+        pdf.setTextColor(...color);
+        pdf.setFont("helvetica", "bold");
+        pdf.text(`[${insight.type.toUpperCase()}] ${insight.title}`, margin, y);
+        y += 4;
+        pdf.setTextColor(...dark);
+        pdf.setFont("helvetica", "normal");
+        const lines = pdf.splitTextToSize(insight.description, contentWidth - 4);
+        pdf.text(lines, margin + 2, y);
+        y += lines.length * 4 + 4;
+      });
+
+      if (insights.length === 0) {
+        pdf.setTextColor(...muted);
+        pdf.text("No insights available for this period.", margin, y);
+      }
+
+      // ── Footer ──
+      addFooter(1, pdf.getNumberOfPages());
+
+      pdf.save(`SRMSS_Report_${period}_${todayStr}.pdf`);
+    } catch (err) {
+      console.error("PDF export failed", err);
+    } finally {
+      setExporting(false);
+    }
+  }, [period, todayStr, tripMetrics, routePerformance, weeklyTrend, fuelTrends, fuelSummary, fleetUtilization, maintenanceSummary, insights, rangeLabel, periodLabel]);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Reports & Analytics"
+        subtitle={`${periodLabel} report - ${rangeLabel}`}
+        action={
+          <div className="flex items-center gap-2">
+            <PrimaryButton onClick={exportPDF} disabled={exporting}>
+              <Download className="mr-1.5 h-4 w-4" />{exporting ? "Generating..." : "Export PDF"}
+            </PrimaryButton>
+          </div>
+        }
+      />
+
+      <div className="space-y-6 bg-white p-6 rounded-2xl">
+        <div className="border-b border-slate-200 pb-4 mb-2">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-blue-700">
+            <BarChart3 className="h-4 w-4" /> SRMSS OPERATIONAL REPORT
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mt-1">{periodLabel} Performance Report</h2>
+          {/* suppressHydrationWarning: the "Generated" timestamp is a live clock value,
+              so the server and client renders can differ by a second. */}
+          <p className="text-sm text-slate-500" suppressHydrationWarning>Reporting Period: {rangeLabel} | Generated: {new Date().toLocaleString()}</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {(["weekly", "monthly", "custom"] as ReportPeriod[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPeriod(p)}
+              className={`rounded-xl px-4 py-2 text-xs font-semibold transition ${
+                period === p
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {p === "weekly" ? "Weekly" : p === "monthly" ? "Monthly" : "Custom Range"}
+            </button>
+          ))}
+          {period === "custom" && (
+            <div className="flex items-center gap-2 ml-2">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700"
+              />
+              <span className="text-xs text-slate-400">to</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: "Total Trips", value: String(tripMetrics.total), sub: `${periodLabel.toLowerCase()} schedule`, icon: CalendarDays, color: "text-blue-600", bg: "bg-blue-50" },
+            { label: "Completion Rate", value: `${tripMetrics.completionRate}%`, sub: `${tripMetrics.completed} completed`, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
+            { label: "Punctuality Rate", value: `${tripMetrics.punctualityRate}%`, sub: "On-time + completed", icon: Gauge, color: "text-indigo-600", bg: "bg-indigo-50" },
+            { label: "Delayed Trips", value: String(tripMetrics.delayed), sub: tripMetrics.delayed > 0 ? "Requires attention" : "All on time", icon: Clock, color: tripMetrics.delayed > 0 ? "text-amber-600" : "text-emerald-600", bg: tripMetrics.delayed > 0 ? "bg-amber-50" : "bg-emerald-50" },
+          ].map(({ label, value, sub, icon: Icon, color, bg }) => (
+            <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</div>
+                  <div className={`mt-1 text-3xl font-bold ${color}`}>{value}</div>
+                  <div className="mt-1 text-xs text-slate-500">{sub}</div>
+                </div>
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${bg}`}>
+                  <Icon className={`h-5 w-5 ${color}`} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800">Trip Completion Trend</h3>
+            <p className="text-xs text-slate-400 mb-4">Daily trip completion rates</p>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={weeklyTrend}>
+                  <defs>
+                    <linearGradient id="colorTrips" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#146CFA" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#146CFA" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#64748B" }} />
+                  <YAxis tick={{ fontSize: 11, fill: "#64748B" }} />
+                  <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                  <Area type="monotone" dataKey="trips" stroke="#146CFA" strokeWidth={2} fillOpacity={1} fill="url(#colorTrips)" name="Total Trips" />
+                  <Area type="monotone" dataKey="completed" stroke="#10B981" strokeWidth={2} fill="transparent" name="Completed" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800">Trip Status Distribution</h3>
+            <p className="text-xs text-slate-400 mb-4">Breakdown of all scheduled trips</p>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={tripStatusDistribution} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}>
+                    {tripStatusDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800">Route Performance Analysis</h3>
+          <p className="text-xs text-slate-400 mb-4">Punctuality and completion rates by corridor</p>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={routePerformance} layout="vertical" margin={{ left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11, fill: "#64748B" }} unit="%" />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#64748B" }} width={130} />
+                <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="punctualityRate" name="Punctuality %" fill="#146CFA" radius={[0, 6, 6, 0]} />
+                <Bar dataKey="completionRate" name="Completion %" fill="#10B981" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  {["Route", "Trips", "Completed", "On Time", "Delayed", "Punctuality", "Completion"].map((h) => (
+                    <th key={h} className="px-3 py-2 font-semibold">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {routePerformance.map((r) => (
+                  <tr key={r.name} className="border-t border-slate-100">
+                    <td className="px-3 py-2 font-semibold text-slate-800">{r.name}</td>
+                    <td className="px-3 py-2 text-slate-600">{r.total}</td>
+                    <td className="px-3 py-2 text-emerald-600 font-medium">{r.completed}</td>
+                    <td className="px-3 py-2 text-blue-600 font-medium">{r.onTime}</td>
+                    <td className="px-3 py-2 text-amber-600 font-medium">{r.delayed}</td>
+                    <td className="px-3 py-2 font-bold text-slate-800">{r.punctualityRate}%</td>
+                    <td className="px-3 py-2 font-bold text-slate-800">{r.completionRate}%</td>
+                  </tr>
+                ))}
+                {routePerformance.length === 0 && (
+                  <tr><td colSpan={7} className="px-3 py-6 text-center text-slate-400">No route data for this period</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-3">
+          <div className="xl:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800">Fuel Consumption Trends</h3>
+            <p className="text-xs text-slate-400 mb-4">Daily fuel usage and cost</p>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={fuelTrends}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748B" }} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#64748B" }} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: "#64748B" }} />
+                  <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid #E2E8F0", fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line yAxisId="left" type="monotone" dataKey="liters" stroke="#F59E0B" strokeWidth={2} dot={{ r: 3 }} name="Liters" />
+                  <Line yAxisId="right" type="monotone" dataKey="cost" stroke="#EF4444" strokeWidth={2} dot={{ r: 3 }} name="Cost (LKR)" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 mb-3">Fuel Summary</h3>
+            <div className="space-y-3">
+              {[
+                { label: "Total Fuel", value: `${fuelSummary.totalLiters} L`, icon: Gauge, color: "text-amber-600" },
+                { label: "Total Cost", value: `LKR ${fuelSummary.totalCost.toLocaleString()}`, icon: TrendingUp, color: "text-rose-600" },
+                { label: "Avg per Trip", value: `${fuelSummary.avgPerTrip} L`, icon: Target, color: "text-blue-600" },
+                { label: "Avg Cost/Trip", value: `LKR ${fuelSummary.avgCostPerTrip.toLocaleString()}`, icon: BarChart3, color: "text-indigo-600" },
+              ].map(({ label, value, icon: Icon, color }) => (
+                <div key={label} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <Icon className={`h-4 w-4 ${color}`} />
+                    <span className="text-xs font-medium text-slate-600">{label}</span>
+                  </div>
+                  <span className="text-sm font-bold text-slate-800">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800">Fleet Utilization</h3>
+            <p className="text-xs text-slate-400 mb-4">{fleetUtilization.utilizationRate}% of fleet active</p>
+            <div className="space-y-3">
+              {[
+                { label: "Active / In Service", value: fleetUtilization.active, total: fleetUtilization.total, color: "bg-emerald-500" },
+                { label: "Under Maintenance", value: fleetUtilization.maintenanceCount, total: fleetUtilization.total, color: "bg-amber-500" },
+                { label: "Out of Service", value: fleetUtilization.outOfService, total: fleetUtilization.total, color: "bg-rose-500" },
+              ].map(({ label, value, total, color }) => (
+                <div key={label}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="font-medium text-slate-600">{label}</span>
+                    <span className="font-bold text-slate-800">{value} / {total}</span>
+                  </div>
+                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div className={`h-full rounded-full ${color} transition-all duration-700`} style={{ width: total ? `${(value / total) * 100}%` : "0%" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-xl bg-blue-50 p-3 text-center">
+              <div className="text-2xl font-bold text-blue-700">{fleetUtilization.utilizationRate}%</div>
+              <div className="text-xs text-blue-600">Fleet Utilization Rate</div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800">Maintenance Summary</h3>
+            <p className="text-xs text-slate-400 mb-4">{maintenanceSummary.total} records in period</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: "Completed", value: maintenanceSummary.completed, color: "text-emerald-600", bg: "bg-emerald-50" },
+                { label: "Scheduled", value: maintenanceSummary.scheduled, color: "text-amber-600", bg: "bg-amber-50" },
+                { label: "Overdue", value: maintenanceSummary.overdue, color: "text-rose-600", bg: "bg-rose-50" },
+              ].map(({ label, value, color, bg }) => (
+                <div key={label} className={`rounded-xl ${bg} p-4 text-center`}>
+                  <div className={`text-2xl font-bold ${color}`}>{value}</div>
+                  <div className="text-xs font-medium text-slate-600 mt-1">{label}</div>
+                </div>
+              ))}
+            </div>
+            {maintenanceSummary.overdue > 0 && (
+              <div className="mt-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3">
+                <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-rose-700">{maintenanceSummary.overdue} maintenance tasks are overdue. Schedule immediate service to prevent breakdowns.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Lightbulb className="h-5 w-5 text-amber-500" />
+            <h3 className="text-sm font-bold text-slate-800">Data-Driven Insights</h3>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {insights.map((insight, i) => (
+              <div
+                key={i}
+                className={`flex items-start gap-3 rounded-xl border p-4 ${
+                  insight.type === "positive"
+                    ? "border-emerald-200 bg-emerald-50"
+                    : insight.type === "warning"
+                    ? "border-amber-200 bg-amber-50"
+                    : "border-blue-200 bg-blue-50"
+                }`}
+              >
+                {insight.type === "positive" ? (
+                  <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
+                ) : insight.type === "warning" ? (
+                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+                ) : (
+                  <Info className="h-5 w-5 text-blue-600 shrink-0" />
+                )}
+                <div>
+                  <div className={`text-sm font-semibold ${
+                    insight.type === "positive" ? "text-emerald-800" : insight.type === "warning" ? "text-amber-800" : "text-blue-800"
+                  }`}>{insight.title}</div>
+                  <p className={`text-xs mt-1 ${
+                    insight.type === "positive" ? "text-emerald-700" : insight.type === "warning" ? "text-amber-700" : "text-blue-700"
+                  }`}>{insight.description}</p>
+                </div>
+              </div>
+            ))}
+            {insights.length === 0 && (
+              <div className="col-span-full rounded-xl border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
+                No insights available for this period
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-slate-200 pt-4 mt-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+            <span>Smart Route Management & Scheduling System (SRMSS)</span>
+            <span>Confidential - For Management Review & Sustainability Reporting</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AdminDashboardContent() {
   const router = useRouter();
@@ -1358,70 +2185,19 @@ function AdminDashboardContent() {
         </div>
       )}
 
-      {/* ══════════ REPORTS ══════════ */}
+{/* ══════════ REPORTS ══════════ */}
       {currentSection === "reports" && (
-        <div className="space-y-6">
-          <PageHeader title="Reports &amp; Analytics" subtitle="View performance metrics and export reports"
-            action={<PrimaryButton onClick={() => window.print()}><Download className="mr-1.5 h-4 w-4" />Export PDF</PrimaryButton>} />
-          <div className="grid gap-4 sm:grid-cols-4">
-            {[
-              { label: "Total Routes", value: `${routes.length}`, sub: "Service corridors" },
-              { label: "Network Distance", value: `${routes.reduce((s, r) => s + r.distance, 0)} km`, sub: "Total coverage" },
-              { label: "On-Time Rate", value: `${onTimeRate}%`, sub: "Trip punctuality" },
-              { label: "System Uptime", value: "99.8%", sub: "Last 30 days" },
-            ].map(({ label, value, sub }) => (
-              <div key={label} className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-5">
-                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">{label}</div>
-                <div className="text-2xl font-bold text-[var(--text-primary)]">{value}</div>
-                <div className="text-xs text-[var(--text-secondary)] mt-0.5">{sub}</div>
-              </div>
-            ))}
-          </div>
-          <SectionCard title="Route Performance" subtitle="On-time completion rate by corridor">
-            <div className="space-y-3">
-              {routePerformanceData.map(r => (
-                <div key={r.name} className="flex items-center gap-4">
-                  <div className="w-44 text-sm font-medium text-[var(--text-primary)]">{r.name}</div>
-                  <div className="flex-1"><div className="h-5 w-full overflow-hidden rounded-full bg-[var(--soft)] border border-[var(--border)]"><div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all" style={{ width: `${r.value}%` }} /></div></div>
-                  <div className="w-12 text-right font-bold text-[var(--text-primary)]">{r.value}%</div>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
-          <div className="grid gap-6 xl:grid-cols-2">
-            <SectionCard title="Export Data" subtitle="Download reports in various formats">
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  { label: "Fleet Report", detail: "PDF export of all fleet data", action: "Fleet report exported" },
-                  { label: "Schedule Report", detail: "CSV export of timetables", action: "Schedule report exported" },
-                  { label: "Driver Report", detail: "Excel of driver roster", action: "Driver report exported" },
-                  { label: "Maintenance Report", detail: "PDF of service logs", action: "Maintenance report exported" },
-                ].map(({ label, detail, action }) => (
-                  <button key={label} type="button" onClick={() => showToast(action)} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--soft)] p-4 text-left transition hover:bg-[var(--panel)]">
-                    <FileText className="h-5 w-5 text-[var(--accent)] shrink-0" />
-                    <div><div className="text-sm font-semibold text-[var(--text-primary)]">{label}</div><div className="text-xs text-[var(--text-muted)]">{detail}</div></div>
-                  </button>
-                ))}
-              </div>
-            </SectionCard>
-            <SectionCard title="Fleet Status Distribution">
-              <div className="space-y-3">
-                {[
-                  { label: "Active / In Service", value: activeBuses.length, total: buses.length, color: "bg-emerald-500" },
-                  { label: "Under Maintenance", value: buses.filter(b => b.status === "Under Maintenance").length, total: buses.length, color: "bg-amber-500" },
-                  { label: "Out of Service", value: buses.filter(b => b.status === "Out of Service").length, total: buses.length, color: "bg-rose-500" },
-                ].map(({ label, value, total, color }) => (
-                  <div key={label} className="flex items-center gap-3">
-                    <div className={`h-3 w-3 rounded-full ${color} shrink-0`} />
-                    <div className="flex-1 text-sm text-[var(--text-secondary)]">{label}</div>
-                    <div className="w-full max-w-[120px]"><div className="h-3 w-full overflow-hidden rounded-full bg-[var(--soft)] border border-[var(--border)]"><div className={`h-full rounded-full ${color}`} style={{ width: total ? `${(value / total) * 100}%` : "0%" }} /></div></div>
-                    <div className="w-6 text-right font-bold text-sm text-[var(--text-primary)]">{value}</div>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          </div>
-        </div>
+        <ReportingAnalyticsSection
+          schedules={schedules}
+          routes={routes}
+          buses={buses}
+          drivers={drivers}
+          fuel={fuel}
+          maintenance={maintenance}
+          conflicts={conflicts}
+          exceptions={exceptions}
+          onTimeRate={onTimeRate}
+        />
       )}
 
       {/* ══════════ SYSTEM SETTINGS ══════════ */}
