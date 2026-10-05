@@ -1,1 +1,1 @@
-export { default } from "@/src/homepage/PublicHome";
+export { default } from "@/components/homepage/PublicHome";

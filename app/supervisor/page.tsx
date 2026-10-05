@@ -87,7 +87,7 @@ function SupervisorDashboardContent() {
   const urlSection = searchParams.get("section");
   const [currentSection, setCurrentSection] = useState(() => {
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("srmss-dashboard-section");
+      const stored = localStorage.getItem("srmss-supervisor-section");
       return stored || "overview";
     }
     return "overview";
@@ -97,17 +97,17 @@ function SupervisorDashboardContent() {
   useEffect(() => {
     if (urlSection && urlSection !== currentSection) {
       setCurrentSection(urlSection);
-      localStorage.setItem("srmss-dashboard-section", urlSection);
+      localStorage.setItem("srmss-supervisor-section", urlSection);
     }
   }, [urlSection, currentSection]);
 
   const navigateSection = (sec: string) => {
     setCurrentSection(sec);
-    localStorage.setItem("srmss-dashboard-section", sec);
+    localStorage.setItem("srmss-supervisor-section", sec);
     if (sec === "overview") {
-      router.push("/dashboard");
+      router.push("/supervisor");
     } else {
-      router.push(`/dashboard?section=${sec}`);
+      router.push(`/supervisor?section=${sec}`);
     }
   };
 

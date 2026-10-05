@@ -74,38 +74,38 @@ export type MaintenanceRecord = {
 };
 
 export const sidebarItems = [
-  { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
-  { label: "Control Board", href: "/dashboard?section=control", icon: "Activity" },
-  { label: "Fleet Management", href: "/dashboard?section=fleet", icon: "Bus" },
-  { label: "Driver Roster", href: "/dashboard?section=drivers", icon: "Users" },
-  { label: "Route Network", href: "/dashboard?section=routes", icon: "Route" },
-  { label: "Timetable", href: "/dashboard?section=schedules", icon: "CalendarDays" },
-  { label: "Conflict Center", href: "/dashboard?section=conflicts", icon: "AlertTriangle" },
-  { label: "Exceptions", href: "/dashboard?section=exceptions", icon: "Wrench" },
-  { label: "Analytics & Reports", href: "/dashboard?section=analytics", icon: "BarChart3" },
+  { label: "Dashboard", href: "/supervisor", icon: "LayoutDashboard" },
+  { label: "Control Board", href: "/supervisor?section=control", icon: "Activity" },
+  { label: "Fleet Management", href: "/supervisor?section=fleet", icon: "Bus" },
+  { label: "Driver Roster", href: "/supervisor?section=drivers", icon: "Users" },
+  { label: "Route Network", href: "/supervisor?section=routes", icon: "Route" },
+  { label: "Timetable", href: "/supervisor?section=schedules", icon: "CalendarDays" },
+  { label: "Conflict Center", href: "/supervisor?section=conflicts", icon: "AlertTriangle" },
+  { label: "Exceptions", href: "/supervisor?section=exceptions", icon: "Wrench" },
+  { label: "Analytics & Reports", href: "/supervisor?section=analytics", icon: "BarChart3" },
 ];
 
 export const adminSidebarItems = [
-  { label: "Dashboard", href: "/admin", icon: "LayoutDashboard" },
-  { label: "User Management", href: "/admin?section=users", icon: "UserCog" },
-  { label: "Depot Management", href: "/admin?section=depots", icon: "MapPin" },
-  { label: "Control Board", href: "/admin?section=control", icon: "Activity" },
-  { label: "Fleet Management", href: "/admin?section=fleet", icon: "Bus" },
-  { label: "Driver Roster", href: "/admin?section=drivers", icon: "Users" },
-  { label: "Route Network", href: "/admin?section=routes", icon: "Route" },
-  { label: "Timetable", href: "/admin?section=schedules", icon: "CalendarDays" },
-  { label: "Reports & Analytics", href: "/admin?section=reports", icon: "BarChart3" },
+  { label: "Dashboard", href: "/manager", icon: "LayoutDashboard" },
+  { label: "User Management", href: "/manager?section=users", icon: "UserCog" },
+  { label: "Depot Management", href: "/manager?section=depots", icon: "MapPin" },
+  { label: "Control Board", href: "/manager?section=control", icon: "Activity" },
+  { label: "Fleet Management", href: "/manager?section=fleet", icon: "Bus" },
+  { label: "Driver Roster", href: "/manager?section=drivers", icon: "Users" },
+  { label: "Route Network", href: "/manager?section=routes", icon: "Route" },
+  { label: "Timetable", href: "/manager?section=schedules", icon: "CalendarDays" },
+  { label: "Reports & Analytics", href: "/manager?section=reports", icon: "BarChart3" },
 ];
 
 export const operationalStaffSidebarItems = [
-  { label: "Dashboard", href: "/operational-staff", icon: "LayoutDashboard" },
-  { label: "View Routes", href: "/operational-staff?section=routes", icon: "Route" },
-  { label: "View Schedules", href: "/operational-staff?section=schedules", icon: "CalendarDays" },
-  { label: "Update Trip Status", href: "/operational-staff?section=trip-status", icon: "Activity" },
-  { label: "Record Fuel Usage", href: "/operational-staff?section=fuel", icon: "Fuel" },
-  { label: "Record Maintenance", href: "/operational-staff?section=maintenance", icon: "Wrench" },
-  { label: "Bus Availability", href: "/operational-staff?section=buses", icon: "Bus" },
-  { label: "Driver Assignments", href: "/operational-staff?section=drivers", icon: "Users" },
+  { label: "Dashboard", href: "/staff", icon: "LayoutDashboard" },
+  { label: "View Routes", href: "/staff?section=routes", icon: "Route" },
+  { label: "View Schedules", href: "/staff?section=schedules", icon: "CalendarDays" },
+  { label: "Update Trip Status", href: "/staff?section=trip-status", icon: "Activity" },
+  { label: "Record Fuel Usage", href: "/staff?section=fuel", icon: "Fuel" },
+  { label: "Record Maintenance", href: "/staff?section=maintenance", icon: "Wrench" },
+  { label: "Bus Availability", href: "/staff?section=buses", icon: "Bus" },
+  { label: "Driver Assignments", href: "/staff?section=drivers", icon: "Users" },
 ];
 
 export const routeData: DepotRoute[] = [

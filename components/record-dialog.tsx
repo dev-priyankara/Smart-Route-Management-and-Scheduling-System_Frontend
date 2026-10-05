@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Modal, SecondaryButton } from "./AppShell";
+import { Modal, SecondaryButton } from "@/components/shell";
 
 export type RecordField = {
   name: string;

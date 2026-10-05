@@ -58,7 +58,7 @@ function OperationalStaffContent() {
   const urlSection = searchParams.get("section");
   const [currentSection, setCurrentSection] = useState(() => {
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("srmss-operational-staff-section");
+      const stored = localStorage.getItem("srmss-staff-section");
       return stored || "dashboard";
     }
     return "dashboard";
@@ -68,7 +68,7 @@ function OperationalStaffContent() {
   useEffect(() => {
     if (urlSection && urlSection !== currentSection) {
       setCurrentSection(urlSection);
-      localStorage.setItem("srmss-operational-staff-section", urlSection);
+      localStorage.setItem("srmss-staff-section", urlSection);
     }
   }, [urlSection, currentSection]);
 
@@ -118,11 +118,11 @@ function OperationalStaffContent() {
 
   const navigateSection = (sec: string) => {
     setCurrentSection(sec);
-    localStorage.setItem("srmss-operational-staff-section", sec);
+    localStorage.setItem("srmss-staff-section", sec);
     if (sec === "dashboard") {
-      router.push("/operational-staff");
+      router.push("/staff");
     } else {
-      router.push(`/operational-staff?section=${sec}`);
+      router.push(`/staff?section=${sec}`);
     }
   };
 

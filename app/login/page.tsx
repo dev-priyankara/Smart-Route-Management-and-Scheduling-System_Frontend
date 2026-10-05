@@ -12,7 +12,7 @@ const DEMO_ACCOUNTS = [
     email: "admin@srmss.lk",
     password: "Admin2026!",
     role: "admin",
-    redirect: "/admin",
+    redirect: "/manager",
     color: "bg-violet-600 hover:bg-violet-700",
     badge: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
   },
@@ -21,7 +21,7 @@ const DEMO_ACCOUNTS = [
     email: "depot.admin@srmss.lk",
     password: "SRMSS2026!",
     role: "depot-supervisor",
-    redirect: "/dashboard",
+    redirect: "/supervisor",
     color: "bg-[var(--accent)] hover:bg-[var(--accent-dark)]",
     badge: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
   },
@@ -30,7 +30,7 @@ const DEMO_ACCOUNTS = [
     email: "depot.clerk@srmss.lk",
     password: "Clerk2026!",
     role: "operational-staff",
-    redirect: "/operational-staff",
+    redirect: "/staff",
     color: "bg-emerald-600 hover:bg-emerald-700",
     badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
   },
@@ -278,11 +278,11 @@ export default function LoginPage() {
     } else {
       // Fallback
       if (email === "admin@srmss.lk") {
-        doLogin(email, form.password, "admin", "/admin");
+        doLogin(email, form.password, "admin", "/manager");
       } else if (email === "depot.clerk@srmss.lk") {
-        doLogin(email, form.password, "operational-staff", "/operational-staff");
+        doLogin(email, form.password, "operational-staff", "/staff");
       } else {
-        doLogin(email, form.password, "depot-supervisor", "/dashboard");
+        doLogin(email, form.password, "depot-supervisor", "/supervisor");
       }
     }
   };

@@ -20,18 +20,15 @@
     ],
     "paths": {
       "@/*": ["./*"],
-      "@/components/ui": ["./src/components/ui/index.ts"],
-      "@/components/ui/*": ["./src/components/ui/*"],
-      "@/components/shared": ["./src/components/shared/index.ts"],
-      "@/components/shared/*": ["./src/components/shared/*"],
-      "@/components/theme-provider": ["./src/components/shared/ThemeProvider.tsx"],
-      "@/components/shell": ["./src/components/shared/shell.ts"],
-      "@/components/record-dialog": ["./src/components/shared/RecordDialog.tsx"],
-      "@/lib/mock-data": ["./src/lib/mock-data.ts"],
-      "@/lib/use-persistent-collection": ["./src/lib/use-persistent-collection.ts"],
-      "@/lib/preferences": ["./src/lib/preferences.ts"],
-      "@/constants/homepage": ["./src/constants/homepage.ts"],
-      "@/constants/*": ["./src/constants/*"]
+      "@/lib/mock-data": ["./lib/mock-data.ts"],
+      "@/lib/use-persistent-collection": ["./lib/use-persistent-collection.ts"],
+      "@/lib/preferences": ["./lib/preferences.ts"],
+      "@/components/shell": ["./components/shell.ts"],
+      "@/components/record-dialog": ["./components/record-dialog.tsx"],
+      "@/components/theme-provider": ["./components/theme-provider.tsx"],
+      "@/components/ui": ["./components/ui/index.ts"],
+      "@/constants/homepage": ["./lib/homepage-constants.ts"],
+      "@/constants/*": ["./lib/*"]
     }
   },
   "include": [
@@ -42,5 +39,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "src"]
 }

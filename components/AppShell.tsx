@@ -32,7 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { useTheme } from "./ThemeProvider";
+import { useTheme } from "@/components/theme-provider";
 import { operationalStaffSidebarItems, adminSidebarItems, sidebarItems as defaultSidebarItems } from "@/lib/mock-data";
 import { readPreferences, THEME_PRESETS } from "@/lib/preferences";
 
@@ -89,9 +89,9 @@ function getServerDemoRole() {
 
 function getLastDashboardSection(role: string) {
   if (typeof window === "undefined") return "overview";
-  if (role === "admin") return localStorage.getItem("srmss-admin-section") || "overview";
-  if (role === "operational-staff") return localStorage.getItem("srmss-operational-staff-section") || "dashboard";
-  return localStorage.getItem("srmss-dashboard-section") || "overview";
+  if (role === "admin") return localStorage.getItem("srmss-manager-section") || "overview";
+  if (role === "operational-staff") return localStorage.getItem("srmss-staff-section") || "dashboard";
+  return localStorage.getItem("srmss-supervisor-section") || "overview";
 }
 
 function subscribeToNavigationSearch(onChange: () => void) {
@@ -363,26 +363,26 @@ export function AppShell({
 
   const dynamicNavItems = useMemo(() => {
     return navItems.map((item) => {
-      if (item.href === "/dashboard") {
+      if (item.href === "/supervisor") {
         const lastSection = getLastDashboardSection(demoRole);
         if (lastSection === "overview") return item;
-        const transformedHref = `/dashboard?section=${lastSection}`;
+        const transformedHref = `/supervisor?section=${lastSection}`;
         const hasDuplicateHref = navItems.some((other) => other !== item && other.href === transformedHref);
         return hasDuplicateHref ? item : { ...item, href: transformedHref };
       }
-      if (item.href === "/admin") {
-        const lastSection = (typeof window !== "undefined" && localStorage.getItem("srmss-admin-section")) || "overview";
+      if (item.href === "/manager") {
+        const lastSection = (typeof window !== "undefined" && localStorage.getItem("srmss-manager-section")) || "overview";
         if (lastSection === "overview") return item;
-        const transformedHref = `/admin?section=${lastSection}`;
+        const transformedHref = `/manager?section=${lastSection}`;
         // Don't transform if another sidebar item already has that href (prevents duplicate keys)
         const hasDuplicateHref = navItems.some((other) => other !== item && other.href === transformedHref);
         return hasDuplicateHref ? item : { ...item, href: transformedHref };
       }
-      if (item.href === "/operational-staff") {
+      if (item.href === "/staff") {
         const lastSection =
-          (typeof window !== "undefined" && localStorage.getItem("srmss-operational-staff-section")) || "dashboard";
+          (typeof window !== "undefined" && localStorage.getItem("srmss-staff-section")) || "dashboard";
         if (lastSection === "dashboard") return item;
-        const transformedHref = `/operational-staff?section=${lastSection}`;
+        const transformedHref = `/staff?section=${lastSection}`;
         const hasDuplicateHref = navItems.some((other) => other !== item && other.href === transformedHref);
         return hasDuplicateHref ? item : { ...item, href: transformedHref };
       }

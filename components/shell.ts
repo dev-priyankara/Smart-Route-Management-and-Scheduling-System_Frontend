@@ -1,11 +1,7 @@
 /**
- * shell.ts — barrel re-export
- *
- * All app/ pages import from "@/components/shell".
- * tsconfig.json maps that alias here so they continue to
- * resolve correctly after the refactor.
+ * components/shell.ts
+ * Barrel re-export — all app/ pages import from "@/components/shell"
  */
-
 export {
   AppShell,
   SectionCard,
