@@ -63,3 +63,4 @@ export function usePersistentCollection<T extends { id: number }>(storageKey: st
 
   return { records, addRecord, updateRecord, removeRecord };
 }
+

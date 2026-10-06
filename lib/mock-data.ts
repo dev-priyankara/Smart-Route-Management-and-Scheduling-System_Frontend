@@ -86,15 +86,18 @@ export const sidebarItems = [
 ];
 
 export const adminSidebarItems = [
-  { label: "Dashboard", href: "/manager", icon: "LayoutDashboard" },
-  { label: "User Management", href: "/manager?section=users", icon: "UserCog" },
-  { label: "Depot Management", href: "/manager?section=depots", icon: "MapPin" },
-  { label: "Control Board", href: "/manager?section=control", icon: "Activity" },
-  { label: "Fleet Management", href: "/manager?section=fleet", icon: "Bus" },
-  { label: "Driver Roster", href: "/manager?section=drivers", icon: "Users" },
-  { label: "Route Network", href: "/manager?section=routes", icon: "Route" },
-  { label: "Timetable", href: "/manager?section=schedules", icon: "CalendarDays" },
-  { label: "Reports & Analytics", href: "/manager?section=reports", icon: "BarChart3" },
+  { label: "Dashboard", href: "/admin", icon: "LayoutDashboard" },
+  { label: "User Management", href: "/admin/users", icon: "UserCog" },
+  { label: "Depot Management", href: "/admin/depots", icon: "MapPin" },
+  { label: "Control Board", href: "/admin/control", icon: "Activity" },
+  { label: "Vehicle Fleet", href: "/admin/fleet", icon: "Bus" },
+  { label: "Driver Roster", href: "/admin/drivers", icon: "Users" },
+  { label: "Route Network", href: "/admin/routes", icon: "Route" },
+  { label: "Timetable", href: "/admin/schedules", icon: "CalendarDays" },
+  { label: "Conflict Center", href: "/admin/conflicts", icon: "AlertTriangle" },
+  { label: "Exceptions & Issues", href: "/admin/exceptions", icon: "Wrench" },
+  { label: "Reports & Analytics", href: "/admin/reports", icon: "BarChart3" },
+  { label: "System Settings", href: "/admin/settings", icon: "Settings" },
 ];
 
 export const operationalStaffSidebarItems = [
@@ -469,3 +472,4 @@ export const adminSummaryKpis = [
   { label: "Total Drivers", value: String(driverData.length), detail: "Registered on roster", icon: "Users" },
   { label: "System Users", value: String(adminUsersData.length), detail: "Accounts across roles", icon: "UserCog" },
 ];
+

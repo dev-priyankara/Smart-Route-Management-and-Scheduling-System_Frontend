@@ -140,7 +140,7 @@ export default function RegisterPage() {
               className="w-full rounded-xl bg-[var(--accent)] py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent-dark)]">
               Go to Sign In
             </button>
-            <button type="button" onClick={() => router.push("/manager?section=settings")}
+            <button type="button" onClick={() => router.push("/admin?section=settings")}
               className="w-full rounded-xl border border-[var(--border)] bg-[var(--soft)] py-3 text-sm font-medium text-[var(--text-primary)] transition hover:bg-[var(--panel)]">
               Back to Admin Dashboard
             </button>
@@ -313,3 +313,4 @@ export default function RegisterPage() {
     </div>
   );
 }
+

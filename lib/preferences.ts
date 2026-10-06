@@ -91,3 +91,4 @@ export function applyThemePreset(presetName: ThemePresetName) {
   prefs.accent = preset.accent;
   savePreferences(prefs);
 }
+

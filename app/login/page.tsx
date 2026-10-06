@@ -12,7 +12,7 @@ const DEMO_ACCOUNTS = [
     email: "admin@srmss.lk",
     password: "Admin2026!",
     role: "admin",
-    redirect: "/manager",
+    redirect: "/admin",
     color: "bg-violet-600 hover:bg-violet-700",
     badge: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
   },
@@ -278,7 +278,7 @@ export default function LoginPage() {
     } else {
       // Fallback
       if (email === "admin@srmss.lk") {
-        doLogin(email, form.password, "admin", "/manager");
+        doLogin(email, form.password, "admin", "/admin");
       } else if (email === "depot.clerk@srmss.lk") {
         doLogin(email, form.password, "operational-staff", "/staff");
       } else {
@@ -424,3 +424,4 @@ export default function LoginPage() {
     
   );
 }
+
