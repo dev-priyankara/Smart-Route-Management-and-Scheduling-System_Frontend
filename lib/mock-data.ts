@@ -94,10 +94,11 @@ export const adminSidebarItems = [
   { label: "Driver Roster", href: "/admin/drivers", icon: "Users" },
   { label: "Route Network", href: "/admin/routes", icon: "Route" },
   { label: "Timetable", href: "/admin/schedules", icon: "CalendarDays" },
+  { label: "Fuel Records", href: "/admin/fuel", icon: "Fuel" },
+  { label: "Maintenance", href: "/admin/maintenance", icon: "Wrench" },
   { label: "Conflict Center", href: "/admin/conflicts", icon: "AlertTriangle" },
-  { label: "Exceptions & Issues", href: "/admin/exceptions", icon: "Wrench" },
+  { label: "Exceptions & Issues", href: "/admin/exceptions", icon: "Settings" },
   { label: "Reports & Analytics", href: "/admin/reports", icon: "BarChart3" },
-  { label: "System Settings", href: "/admin/settings", icon: "Settings" },
 ];
 
 export const operationalStaffSidebarItems = [
